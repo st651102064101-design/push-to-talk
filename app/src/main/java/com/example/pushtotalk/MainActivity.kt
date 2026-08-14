@@ -11,6 +11,7 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.app.Dialog
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -27,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private val roomButtons = mutableListOf<Button>()
     private lateinit var name: EditText
     private lateinit var status: TextView
+    private lateinit var serverInfo: TextView
     private lateinit var talk: Button
     private lateinit var output: Button
     private var isConnected = false
@@ -58,7 +60,11 @@ class MainActivity : AppCompatActivity() {
             }; true
         }
     }
-    override fun onStart() { super.onStart(); ContextCompat.registerReceiver(this, statusReceiver, IntentFilter(PttService.ACTION_STATUS), ContextCompat.RECEIVER_NOT_EXPORTED) }
+    override fun onStart() {
+        super.onStart()
+        ContextCompat.registerReceiver(this, statusReceiver, IntentFilter(PttService.ACTION_STATUS), ContextCompat.RECEIVER_NOT_EXPORTED)
+        startService(Intent(this, PttService::class.java).setAction(PttService.ACTION_REQUEST_STATE))
+    }
     override fun onStop() { unregisterReceiver(statusReceiver); super.onStop() }
 
     private fun content(): View {
@@ -86,7 +92,7 @@ class MainActivity : AppCompatActivity() {
         header.addView(actionButton("⚙", surface).apply { textSize = 24f; setPadding(0, 0, 0, 0); setOnClickListener { showSettings() } }, LinearLayout.LayoutParams(dp(52), dp(52)))
         add(header, bottom = 22)
 
-        endpoint = EditText(this).apply { hint = "ws://192.168.x.x:8181"; setText("ws://10.0.2.2:8181"); setSingleLine(); setTextColor(white); setHintTextColor(muted); textSize = 16f; setBackgroundColor(Color.TRANSPARENT); setPadding(0, dp(4), 0, 0) }
+        endpoint = EditText(this).apply { hint = "ws://192.168.x.x:8181"; setText("ws://100.112.185.32:8181"); setSingleLine(); setTextColor(white); setHintTextColor(muted); textSize = 16f; setBackgroundColor(Color.TRANSPARENT); setPadding(0, dp(4), 0, 0) }
 
         val roomCard = card(); roomCard.addView(label("CHANNEL"))
         val roomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, dp(2)) }
@@ -113,8 +119,10 @@ class MainActivity : AppCompatActivity() {
         connectCard.addView(actionButton("เชื่อมต่อ", blue).apply { textSize = 15f; setOnClickListener { requestPermissionsAndConnect() } }, LinearLayout.LayoutParams(-1, -1))
         connectionRow.addView(connectCard, LinearLayout.LayoutParams(0, dp(82), 1f).apply { marginEnd = dp(5) })
         val statusCard = card()
-        status = TextView(this).apply { text = "Status : OFF"; setTextColor(Color.rgb(255, 126, 126)); textSize = 15f; setTypeface(typeface, 1); gravity = Gravity.CENTER; setPadding(dp(4), 0, dp(4), 0) }
-        statusCard.addView(status, LinearLayout.LayoutParams(-1, dp(58)))
+        status = TextView(this).apply { text = "Status : OFF"; setTextColor(Color.rgb(255, 126, 126)); textSize = 15f; setTypeface(typeface, 1); gravity = Gravity.CENTER }
+        serverInfo = TextView(this).apply { text = "Server : -"; setTextColor(muted); textSize = 11f; gravity = Gravity.CENTER; setSingleLine() }
+        statusCard.addView(status, LinearLayout.LayoutParams(-1, dp(32)))
+        statusCard.addView(serverInfo, LinearLayout.LayoutParams(-1, dp(26)))
         connectionRow.addView(statusCard, LinearLayout.LayoutParams(0, dp(82), 1f).apply { marginStart = dp(5) })
         add(connectionRow, bottom = 24)
 
@@ -144,7 +152,9 @@ class MainActivity : AppCompatActivity() {
         content.addView(name, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
         content.addView(label("อุปกรณ์เสียง"))
         content.addView(output, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8); bottomMargin = dp(20) })
+        content.addView(Button(this).apply { text = "ทดสอบลำโพง"; isAllCaps = false; setTextColor(white); background = pressedBackground(Color.rgb(42, 61, 90), darken(Color.rgb(42, 61, 90))); setOnClickListener { serviceAction(PttService.ACTION_TEST_SPEAKER) } }, LinearLayout.LayoutParams(-1, dp(46)).apply { bottomMargin = dp(12) })
         content.addView(Button(this).apply { text = "บันทึก"; isAllCaps = false; setTextColor(white); background = pressedBackground(blue, darken(blue)); setOnClickListener { saveSettings(false); dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(46)))
+        content.addView(TextView(this).apply { text = "Version ${BuildConfig.VERSION_NAME}"; setTextColor(muted); textSize = 12f; gravity = Gravity.CENTER; setPadding(0, dp(16), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
         dialog.setContentView(content)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.show()
@@ -192,6 +202,7 @@ class MainActivity : AppCompatActivity() {
             .putString(PREF_NAME, name.text.toString().trim())
             .putInt(PREF_ROOM, selectedRoom)
             .apply()
+        updateServerInfo()
         if (showStatus) Toast.makeText(this, "บันทึกการตั้งค่าแล้ว", Toast.LENGTH_SHORT).show()
     }
     private fun restoreSettings() {
@@ -199,6 +210,12 @@ class MainActivity : AppCompatActivity() {
         endpoint.setText(preferences.getString(PREF_ENDPOINT, endpoint.text.toString()))
         name.setText(preferences.getString(PREF_NAME, name.text.toString()))
         selectRoom(preferences.getInt(PREF_ROOM, 1).coerceIn(1, 5))
+        updateServerInfo()
+    }
+    private fun updateServerInfo() {
+        val value = endpoint.text.toString().trim()
+        val host = runCatching { Uri.parse(value).host }.getOrNull().orEmpty().ifBlank { value }
+        serverInfo.text = "Server : ${host.ifBlank { "-" }}"
     }
     companion object {
         private const val PREFERENCES = "ptt-settings"
