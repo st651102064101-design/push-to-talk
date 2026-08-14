@@ -23,6 +23,10 @@ class PttService : Service() {
     private var microphoneGain = 1f
     @Volatile private var recording = false
     private var connected = false
+    private var channelBusy = false
+    private var activeSpeaker = ""
+    private var roomMembers = arrayListOf<String>()
+    private var allMembersView = false
     private lateinit var audioManager: AudioManager
     private var outputIndex = -1
     private var selectedOutput: AudioDeviceInfo? = null
@@ -42,7 +46,12 @@ class PttService : Service() {
             }
             ACTION_TEST_SPEAKER -> testSpeaker()
             ACTION_REQUEST_TALK -> socket?.send("{\"type\":\"request-talk\"}")
-            ACTION_RELEASE_TALK -> { stopRecording(); socket?.send("{\"type\":\"release-talk\"}") }
+            ACTION_RELEASE_TALK -> {
+                stopRecording()
+                channelBusy = false; activeSpeaker = ""
+                socket?.send("{\"type\":\"release-talk\"}")
+                status("พร้อมพูด", connected)
+            }
             ACTION_CYCLE_OUTPUT -> cycleOutput()
         }; return START_NOT_STICKY
     }
@@ -67,6 +76,8 @@ class PttService : Service() {
     private fun switchRoom(room: String, name: String) {
         if (socket == null || room.isBlank()) return
         stopRecording()
+        channelBusy = false; activeSpeaker = ""
+        roomMembers.clear(); allMembersView = room == "all"
         socket?.send("{\"type\":\"release-talk\"}")
         socket?.send(joinMessage(room, name))
         status("กำลังเปลี่ยนห้อง…")
@@ -78,10 +89,37 @@ class PttService : Service() {
         override fun onMessage(ws: WebSocket, text: String) {
             val msg = JSONObject(text)
             when (msg.optString("type")) {
-                "joined" -> { connected = true; status("อยู่ในห้อง ${msg.optString("room")} — พร้อมพูด", true) }
+                "joined" -> { connected = true; channelBusy = false; activeSpeaker = ""; status("พร้อมพูด", true) }
                 "floor-granted" -> startRecording()
-                "floor-busy" -> status("มีคนกำลังพูดอยู่", true)
-                "speaker" -> if (!msg.optBoolean("active")) status("พร้อมพูด", true)
+                "floor-busy" -> {
+                    channelBusy = true
+                    activeSpeaker = msg.optString("name", "ผู้ใช้อื่น")
+                    status("ช่องสัญญาณไม่ว่าง", true, EVENT_FLOOR_BUSY)
+                }
+                "speaker" -> {
+                    if (msg.optBoolean("active")) {
+                        channelBusy = true
+                        activeSpeaker = msg.optString("name", "ผู้ใช้อื่น")
+                        status("กำลังพูด: $activeSpeaker", true)
+                    } else {
+                        channelBusy = false; activeSpeaker = ""
+                        status("พร้อมพูด", true)
+                    }
+                }
+                "members" -> {
+                    allMembersView = msg.optBoolean("allView")
+                    val members = msg.optJSONArray("members")
+                    roomMembers = arrayListOf<String>().apply {
+                        if (members != null) for (index in 0 until members.length()) {
+                            val member = members.optJSONObject(index) ?: continue
+                            val memberName = member.optString("name", "Android").ifBlank { "Android" }
+                            val selfSuffix = if (member.optBoolean("self")) " (คุณ)" else ""
+                            val roomSuffix = if (allMembersView) " • ${roomLabel(member.optString("room"))}" else ""
+                            add(memberName + selfSuffix + roomSuffix)
+                        }
+                    }
+                    status("อัปเดตรายชื่อออนไลน์", connected)
+                }
                 "error" -> status(msg.optString("message"), connected)
             }
         }
@@ -98,7 +136,8 @@ class PttService : Service() {
             if (NoiseSuppressor.isAvailable()) noiseSuppressor = NoiseSuppressor.create(it.audioSessionId)?.apply { enabled = true }
             it.startRecording()
         }
-        recording = true; status("กำลังพูด", true)
+        channelBusy = false; activeSpeaker = ""
+        recording = true; status("คุณกำลังพูด", true)
         Thread {
             val frame = ByteArray(FRAME)
             while (recording) {
@@ -214,14 +253,31 @@ class PttService : Service() {
         else -> "Bluetooth (${device.productName})"
     }
     private fun currentOutputLabel(): String = selectedOutput?.let(::deviceLabel) ?: audioManager.communicationDevice?.let(::deviceLabel) ?: "อัตโนมัติ"
-    private fun close(message: String) { stopRecording(); socket = null; connected = false; status(message); stopSelf() }
-    private fun status(text: String, ready: Boolean = false) = sendBroadcast(Intent(ACTION_STATUS).setPackage(packageName).putExtra(EXTRA_STATUS, text).putExtra(EXTRA_READY, ready).putExtra(EXTRA_OUTPUT, currentOutputLabel()))
+    private fun roomLabel(room: String): String = when {
+        room == "all" -> "All"
+        room.startsWith("room-") -> "ห้อง ${room.removePrefix("room-")}"
+        else -> room
+    }
+    private fun close(message: String) { stopRecording(); socket = null; connected = false; channelBusy = false; activeSpeaker = ""; roomMembers.clear(); allMembersView = false; status(message); stopSelf() }
+    private fun status(text: String, ready: Boolean = false, event: String? = null) = sendBroadcast(
+        Intent(ACTION_STATUS).setPackage(packageName)
+            .putExtra(EXTRA_STATUS, text)
+            .putExtra(EXTRA_READY, ready)
+            .putExtra(EXTRA_BUSY, channelBusy)
+            .putExtra(EXTRA_SPEAKER, activeSpeaker)
+            .putExtra(EXTRA_SELF_TALKING, recording)
+            .putExtra(EXTRA_EVENT, event)
+            .putExtra(EXTRA_OUTPUT, currentOutputLabel())
+            .putStringArrayListExtra(EXTRA_MEMBERS, ArrayList(roomMembers))
+            .putExtra(EXTRA_ALL_MEMBERS_VIEW, allMembersView)
+    )
     private fun createChannel() { getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID, "Push-to-Talk", NotificationManager.IMPORTANCE_LOW)) }
     override fun onDestroy() { stopRecording(); player?.release(); audioManager.abandonAudioFocus(null); audioManager.clearCommunicationDevice(); audioManager.mode = AudioManager.MODE_NORMAL; socket?.close(1000, "closed"); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
     companion object {
         const val ACTION_CONNECT = "ptt.CONNECT"; const val ACTION_SWITCH_ROOM = "ptt.SWITCH_ROOM"; const val ACTION_REQUEST_STATE = "ptt.REQUEST_STATE"; const val ACTION_TEST_SPEAKER = "ptt.TEST_SPEAKER"; const val ACTION_REQUEST_TALK = "ptt.REQUEST_TALK"; const val ACTION_RELEASE_TALK = "ptt.RELEASE_TALK"; const val ACTION_CYCLE_OUTPUT = "ptt.CYCLE_OUTPUT"; const val ACTION_STATUS = "ptt.STATUS"
-        const val EXTRA_ENDPOINT = "endpoint"; const val EXTRA_ROOM = "room"; const val EXTRA_NAME = "name"; const val EXTRA_STATUS = "status"; const val EXTRA_READY = "ready"; const val EXTRA_OUTPUT = "output"
+        const val EXTRA_ENDPOINT = "endpoint"; const val EXTRA_ROOM = "room"; const val EXTRA_NAME = "name"; const val EXTRA_STATUS = "status"; const val EXTRA_READY = "ready"; const val EXTRA_OUTPUT = "output"; const val EXTRA_BUSY = "busy"; const val EXTRA_SPEAKER = "speaker"; const val EXTRA_SELF_TALKING = "self_talking"; const val EXTRA_EVENT = "event"; const val EXTRA_MEMBERS = "members"; const val EXTRA_ALL_MEMBERS_VIEW = "all_members_view"
+        const val EVENT_FLOOR_BUSY = "floor_busy"
         private const val CHANNEL_ID = "ptt"; private const val RATE = 16000; private const val IN = AudioFormat.CHANNEL_IN_MONO; private const val OUT = AudioFormat.CHANNEL_OUT_MONO; private const val PCM = AudioFormat.ENCODING_PCM_16BIT; private const val FRAME = 640
     }
 }

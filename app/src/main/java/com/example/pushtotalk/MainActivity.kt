@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.*
@@ -29,6 +30,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var name: EditText
     private lateinit var status: TextView
     private lateinit var serverInfo: TextView
+    private lateinit var channelStatus: TextView
+    private lateinit var membersTitle: TextView
+    private lateinit var membersContainer: LinearLayout
     private lateinit var talk: Button
     private lateinit var output: Button
     private var isConnected = false
@@ -38,14 +42,47 @@ class MainActivity : AppCompatActivity() {
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val ready = intent.getBooleanExtra(PttService.EXTRA_READY, false)
+            val busy = intent.getBooleanExtra(PttService.EXTRA_BUSY, false)
+            val selfTalking = intent.getBooleanExtra(PttService.EXTRA_SELF_TALKING, false)
+            val speaker = intent.getStringExtra(PttService.EXTRA_SPEAKER).orEmpty()
+            val members = intent.getStringArrayListExtra(PttService.EXTRA_MEMBERS) ?: arrayListOf()
+            val allMembersView = intent.getBooleanExtra(PttService.EXTRA_ALL_MEMBERS_VIEW, false)
             isConnected = ready
             status.text = if (ready) "Status : ON" else "Status : OFF"
             status.setTextColor(if (ready) Color.rgb(89, 214, 137) else Color.rgb(255, 126, 126))
-            talk.isEnabled = ready
-            talk.alpha = if (ready) 1f else .55f
+            val canUseTalkButton = ready && (!busy || selfTalking)
+            talk.isEnabled = canUseTalkButton
+            talk.alpha = if (canUseTalkButton) 1f else .55f
+            when {
+                !ready -> {
+                    channelStatus.text = "ยังไม่เชื่อมต่อ"
+                    channelStatus.setTextColor(Color.rgb(159, 178, 204))
+                    talk.text = "กดค้างเพื่อพูด"
+                }
+                selfTalking -> {
+                    channelStatus.text = "คุณกำลังพูด"
+                    channelStatus.setTextColor(Color.rgb(255, 181, 71))
+                    talk.text = "ปล่อยเพื่อหยุดพูด"
+                }
+                busy -> {
+                    channelStatus.text = "กำลังพูด: ${speaker.ifBlank { "ผู้ใช้อื่น" }}"
+                    channelStatus.setTextColor(Color.rgb(255, 126, 126))
+                    talk.text = "ช่องสัญญาณไม่ว่าง"
+                }
+                else -> {
+                    channelStatus.text = "พร้อมพูด"
+                    channelStatus.setTextColor(Color.rgb(89, 214, 137))
+                    talk.text = "กดค้างเพื่อพูด"
+                }
+            }
+            if (intent.getStringExtra(PttService.EXTRA_EVENT) == PttService.EVENT_FLOOR_BUSY) {
+                talk.performHapticFeedback(HapticFeedbackConstants.REJECT)
+                Toast.makeText(this@MainActivity, "ช่องสัญญาณไม่ว่าง", Toast.LENGTH_SHORT).show()
+            }
             output.isEnabled = ready
             output.alpha = if (ready) 1f else .55f
             output.text = "เสียง: " + (intent.getStringExtra(PttService.EXTRA_OUTPUT) ?: "อัตโนมัติ")
+            renderMembers(members, allMembersView, ready)
         }
     }
 
@@ -124,11 +161,47 @@ class MainActivity : AppCompatActivity() {
         statusCard.addView(status, LinearLayout.LayoutParams(-1, dp(32)))
         statusCard.addView(serverInfo, LinearLayout.LayoutParams(-1, dp(26)))
         connectionRow.addView(statusCard, LinearLayout.LayoutParams(0, dp(82), 1f).apply { marginStart = dp(5) })
-        add(connectionRow, bottom = 24)
+        add(connectionRow, bottom = 12)
+
+        channelStatus = TextView(this).apply {
+            text = "ยังไม่เชื่อมต่อ"
+            setTextColor(muted)
+            textSize = 16f
+            setTypeface(typeface, 1)
+            gravity = Gravity.CENTER
+            background = rounded(surface, 16)
+        }
+        box.addView(channelStatus, LinearLayout.LayoutParams(-1, dp(56)).apply { bottomMargin = dp(12) })
 
         talk = actionButton("กดค้างเพื่อพูด", blue).apply { isEnabled = false; alpha = .55f; textSize = 26f; setTypeface(typeface, 1); gravity = Gravity.CENTER }
         box.addView(talk, LinearLayout.LayoutParams(-1, dp(130)))
+
+        val membersCard = card()
+        membersTitle = TextView(this).apply { text = "ออนไลน์ในห้องนี้ (0)"; setTextColor(white); textSize = 16f; setTypeface(typeface, 1) }
+        membersContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        membersCard.addView(membersTitle)
+        membersCard.addView(membersContainer, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        add(membersCard, top = 12)
+        renderMembers(arrayListOf(), false, false)
         return page
+    }
+    private fun renderMembers(members: ArrayList<String>, allView: Boolean, connected: Boolean) {
+        if (!::membersContainer.isInitialized) return
+        membersTitle.text = if (allView) "ออนไลน์ทุกห้อง (${members.size})" else "ออนไลน์ในห้องนี้ (${members.size})"
+        membersContainer.removeAllViews()
+        if (!connected || members.isEmpty()) {
+            membersContainer.addView(TextView(this).apply {
+                text = if (connected) "ยังไม่มีสมาชิกออนไลน์" else "เชื่อมต่อเพื่อดูสมาชิกออนไลน์"
+                setTextColor(Color.rgb(159, 178, 204)); textSize = 14f; setPadding(0, dp(6), 0, dp(4))
+            })
+            return
+        }
+        members.forEach { member ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(7), 0, dp(7)) }
+            row.addView(TextView(this).apply { text = "●"; setTextColor(Color.rgb(89, 214, 137)); textSize = 13f; gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(24), -2))
+            row.addView(TextView(this).apply { text = member; setTextColor(Color.rgb(241, 246, 252)); textSize = 15f }, LinearLayout.LayoutParams(0, -2, 1f))
+            membersContainer.addView(row)
+        }
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun rounded(color: Int, radius: Int): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = dp(radius).toFloat() }
@@ -153,7 +226,7 @@ class MainActivity : AppCompatActivity() {
         content.addView(label("อุปกรณ์เสียง"))
         content.addView(output, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8); bottomMargin = dp(20) })
         content.addView(Button(this).apply { text = "ทดสอบลำโพง"; isAllCaps = false; setTextColor(white); background = pressedBackground(Color.rgb(42, 61, 90), darken(Color.rgb(42, 61, 90))); setOnClickListener { serviceAction(PttService.ACTION_TEST_SPEAKER) } }, LinearLayout.LayoutParams(-1, dp(46)).apply { bottomMargin = dp(12) })
-        content.addView(Button(this).apply { text = "บันทึก"; isAllCaps = false; setTextColor(white); background = pressedBackground(blue, darken(blue)); setOnClickListener { saveSettings(false); dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(46)))
+        content.addView(Button(this).apply { text = "บันทึก"; isAllCaps = false; setTextColor(white); background = pressedBackground(blue, darken(blue)); setOnClickListener { saveSettings(false); syncConnectedProfile(); dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(46)))
         content.addView(TextView(this).apply { text = "Version ${BuildConfig.VERSION_NAME}"; setTextColor(muted); textSize = 12f; gravity = Gravity.CENTER; setPadding(0, dp(16), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
         dialog.setContentView(content)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -196,6 +269,14 @@ class MainActivity : AppCompatActivity() {
         status.setTextColor(Color.rgb(255, 126, 126))
     }
     private fun serviceAction(action: String) = startService(Intent(this, PttService::class.java).setAction(action))
+    private fun syncConnectedProfile() {
+        if (!isConnected) return
+        startService(Intent(this, PttService::class.java).apply {
+            action = PttService.ACTION_SWITCH_ROOM
+            putExtra(PttService.EXTRA_ROOM, if (selectedRoom == 5) "all" else "room-$selectedRoom")
+            putExtra(PttService.EXTRA_NAME, name.text.toString().trim())
+        })
+    }
     private fun saveSettings(showStatus: Boolean) {
         getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
             .putString(PREF_ENDPOINT, endpoint.text.toString().trim())
