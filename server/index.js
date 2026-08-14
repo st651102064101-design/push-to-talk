@@ -1,0 +1,66 @@
+import http from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
+import { randomUUID } from "node:crypto";
+
+const port = Number(process.env.PORT || 8181);
+const rooms = new Map();
+let allFloor = null;
+const dashboard = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PTT status</title><style>body{font-family:system-ui,sans-serif;background:#f6f8fb;color:#182230;max-width:760px;margin:40px auto;padding:0 20px}h1{margin-bottom:4px}.muted{color:#617083}.card{background:#fff;border:1px solid #dce2ea;border-radius:12px;margin:16px 0;padding:16px;box-shadow:0 2px 8px #00000008}ul{padding-left:0;list-style:none}.peer{padding:12px 0;border-top:1px solid #edf0f4}.peer:first-child{border-top:0}.details{color:#617083;font-size:.9rem;line-height:1.55}.speaking{color:#b42318;font-weight:700}.empty{padding:24px;text-align:center}</style></head><body><h1>PTT ออนไลน์</h1><p class="muted" id="updated">กำลังโหลด…</p><main id="rooms"></main><script>const target=document.querySelector('#rooms'),updated=document.querySelector('#updated');function draw(data){updated.textContent='อัปเดตล่าสุด: '+new Date().toLocaleTimeString()+' · ออนไลน์ '+data.totalPeers+' เครื่อง';target.replaceChildren();if(!data.rooms.length){target.innerHTML='<section class="card empty">ยังไม่มีผู้ใช้เข้าห้อง</section>';return}for(const room of data.rooms){const card=document.createElement('section');card.className='card';const h=document.createElement('h2');h.textContent='ห้อง: '+room.id;card.append(h);const list=document.createElement('ul');for(const peer of room.peers){const item=document.createElement('li');item.className='peer';const title=document.createElement('strong');title.textContent=peer.name+(peer.speaking?' — กำลังพูด':'');if(peer.speaking)title.className='speaking';const details=document.createElement('div');details.className='details';details.textContent='อุปกรณ์: '+(peer.device||'ไม่ทราบ')+' · IP: '+peer.ip+' · เชื่อมต่อ: '+peer.connectedMinutes+' นาที · กดพูด: '+peer.talkCount+' ครั้ง';item.append(title,details);list.append(item)}card.append(list);target.append(card)}}async function refresh(){try{draw(await fetch('/status',{cache:'no-store'}).then(r=>r.json()))}catch{updated.textContent='ไม่สามารถเชื่อมต่อ server ได้'}}refresh();setInterval(refresh,2000)</script></body></html>`;
+const server = http.createServer((req, res) => {
+  if (req.url === "/status") {
+    const items = [...rooms.entries()].map(([id, room]) => ({ id, peers: [...room.peers].map(peer => ({ name: peer.name, device: peer.device, ip: peer.ip, connectedMinutes: Math.floor((Date.now() - peer.connectedAt) / 60000), talkCount: peer.talkCount, speaking: room.floor === peer })) }));
+    const totalPeers = items.reduce((total, room) => total + room.peers.length, 0);
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ totalPeers, rooms: items }));
+  }
+  if (req.url === "/" || req.url === "/index.html") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); return res.end(dashboard); }
+  res.writeHead(404); res.end("Not found");
+});
+const wss = new WebSocketServer({ server, maxPayload: 8 * 1024 });
+const emit = (room, value, except) => { const text = JSON.stringify(value); for (const p of room.peers) if (p !== except && p.readyState === WebSocket.OPEN) p.send(text); };
+const emitEverywhere = (value, except) => { for (const room of rooms.values()) emit(room, value, except); };
+function release(room, peer) {
+  if (room?.floor !== peer) return;
+  room.floor = null;
+  if (allFloor === peer) { allFloor = null; emitEverywhere({ type: "speaker", active: false }); }
+  else emit(room, { type: "speaker", active: false });
+}
+function leave(peer) { const room = peer.room; if (!room) return; release(room, peer); room.peers.delete(peer); if (!room.peers.size) rooms.delete(peer.roomId); }
+
+wss.on("connection", (peer, request) => {
+  peer.id = randomUUID();
+  peer.ip = (request.socket.remoteAddress || "unknown").replace("::ffff:", "");
+  peer.connectedAt = Date.now();
+  peer.talkCount = 0;
+  peer.on("message", (data, binary) => {
+    if (binary) {
+      if (peer.room?.floor === peer) {
+        peer.expires = Date.now() + 2000;
+        const targets = peer.roomId === "all" ? rooms.values() : [peer.room];
+        for (const room of targets) for (const p of room.peers) if (p !== peer && p.readyState === WebSocket.OPEN) p.send(data, { binary: true });
+      }
+      return;
+    }
+    let msg; try { msg = JSON.parse(data.toString()); } catch { peer.send(JSON.stringify({ type: "error", message: "invalid message" })); return; }
+    if (msg.type === "join") {
+      const id = String(msg.room || "").trim().slice(0, 40); if (!id) { peer.send(JSON.stringify({ type: "error", message: "room is required" })); return; }
+      leave(peer); const room = rooms.get(id) || { peers: new Set(), floor: null }; rooms.set(id, room); peer.room = room; peer.roomId = id; peer.name = String(msg.name || "Guest").slice(0, 30); peer.device = String(msg.device || "Unknown").slice(0, 80); room.peers.add(peer);
+      peer.send(JSON.stringify({ type: "joined", room: id, id: peer.id }));
+    } else if (msg.type === "request-talk" && peer.room) {
+      const isAll = peer.roomId === "all";
+      const roomBusy = peer.room.floor && peer.room.floor !== peer;
+      const anotherRoomBusy = isAll && [...rooms.values()].some(room => room !== peer.room && room.floor);
+      if (roomBusy || (allFloor && allFloor !== peer) || anotherRoomBusy) peer.send(JSON.stringify({ type: "floor-busy" }));
+      else {
+        peer.room.floor = peer; peer.expires = Date.now() + 2000; peer.talkCount += 1;
+        if (isAll) allFloor = peer;
+        peer.send(JSON.stringify({ type: "floor-granted" }));
+        if (isAll) emitEverywhere({ type: "speaker", active: true, name: peer.name }, peer);
+        else emit(peer.room, { type: "speaker", active: true, name: peer.name }, peer);
+      }
+    } else if (msg.type === "release-talk") release(peer.room, peer);
+  });
+  peer.on("close", () => leave(peer));
+});
+setInterval(() => { for (const room of rooms.values()) if (room.floor?.expires < Date.now()) release(room, room.floor); }, 1000);
+server.listen(port, () => console.log("PTT relay and dashboard listening on port " + port));
