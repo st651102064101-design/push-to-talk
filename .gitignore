@@ -5,4 +5,5 @@ build/
 app/build/
 node_modules/
 .env
+.env.invalid-*
 *.iml

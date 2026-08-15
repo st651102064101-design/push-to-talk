@@ -33,14 +33,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist "%SERVER_ENV%" (
-    echo Creating secure PTT credentials...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "$rng = [Security.Cryptography.RandomNumberGenerator]::Create(); function New-Secret([int]$size) { $bytes = New-Object byte[] $size; $rng.GetBytes($bytes); return [BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant() }; $userToken = New-Secret 32; $adminToken = New-Secret 32; $dashboardPassword = New-Secret 16; @('PTT_USER_TOKEN=' + $userToken, 'PTT_ADMIN_TOKEN=' + $adminToken, 'PTT_DASHBOARD_USER=admin', 'PTT_DASHBOARD_PASSWORD=' + $dashboardPassword) | Set-Content -Encoding ASCII -LiteralPath '%SERVER_ENV%'; $rng.Dispose()"
-    if errorlevel 1 (
-        echo ERROR: Could not create server credentials.
-        pause
-        exit /b 1
-    )
+echo Checking secure PTT credentials...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SERVER_DIR%\Initialize-PttCredentials.ps1" -Path "%SERVER_ENV%"
+if errorlevel 1 (
+    echo ERROR: Could not create or validate server credentials.
+    pause
+    exit /b 1
 )
 
 if not exist "%SERVER_DIR%\node_modules\ws\package.json" (
