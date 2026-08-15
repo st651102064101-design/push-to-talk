@@ -14,6 +14,7 @@ import android.app.Dialog
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -25,6 +26,8 @@ import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
     private lateinit var endpoint: EditText
+    private lateinit var accessToken: EditText
+    private lateinit var tokenStore: SecureTokenStore
     private var selectedRoom = 1
     private val roomButtons = mutableListOf<Button>()
     private lateinit var name: EditText
@@ -36,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var talk: Button
     private lateinit var output: Button
     private var isConnected = false
+    private var isAdmin = false
     private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         if (granted[Manifest.permission.RECORD_AUDIO] == true) connect() else Toast.makeText(this, "ต้องอนุญาตไมโครโฟนก่อน", Toast.LENGTH_SHORT).show()
     }
@@ -48,6 +52,8 @@ class MainActivity : AppCompatActivity() {
             val members = intent.getStringArrayListExtra(PttService.EXTRA_MEMBERS) ?: arrayListOf()
             val allMembersView = intent.getBooleanExtra(PttService.EXTRA_ALL_MEMBERS_VIEW, false)
             isConnected = ready
+            isAdmin = intent.getBooleanExtra(PttService.EXTRA_ADMIN, false)
+            updateRoomButtons()
             status.text = if (ready) "Status : ON" else "Status : OFF"
             status.setTextColor(if (ready) Color.rgb(89, 214, 137) else Color.rgb(255, 126, 126))
             val canUseTalkButton = ready && (!busy || selfTalking)
@@ -79,6 +85,10 @@ class MainActivity : AppCompatActivity() {
                 talk.performHapticFeedback(HapticFeedbackConstants.REJECT)
                 Toast.makeText(this@MainActivity, "ช่องสัญญาณไม่ว่าง", Toast.LENGTH_SHORT).show()
             }
+            if (intent.getStringExtra(PttService.EXTRA_EVENT) == PttService.EVENT_FORBIDDEN_ALL) {
+                selectRoom(1)
+                Toast.makeText(this@MainActivity, "Token นี้ไม่มีสิทธิ์ใช้งาน All", Toast.LENGTH_LONG).show()
+            }
             output.isEnabled = ready
             output.alpha = if (ready) 1f else .55f
             output.text = "เสียง: " + (intent.getStringExtra(PttService.EXTRA_OUTPUT) ?: "อัตโนมัติ")
@@ -88,6 +98,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        tokenStore = SecureTokenStore(this)
         setContentView(content())
         restoreSettings()
         talk.setOnTouchListener { _, event ->
@@ -130,6 +141,7 @@ class MainActivity : AppCompatActivity() {
         add(header, bottom = 22)
 
         endpoint = EditText(this).apply { hint = "ws://192.168.x.x:8181"; setText("ws://100.112.185.32:8181"); setSingleLine(); setTextColor(white); setHintTextColor(muted); textSize = 16f; setBackgroundColor(Color.TRANSPARENT); setPadding(0, dp(4), 0, 0) }
+        accessToken = EditText(this).apply { hint = "Token จาก Server"; setSingleLine(); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD; setTextColor(white); setHintTextColor(muted); textSize = 16f; setBackgroundColor(Color.TRANSPARENT); setPadding(0, dp(4), 0, 0) }
 
         val roomCard = card(); roomCard.addView(label("CHANNEL"))
         val roomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, dp(2)) }
@@ -216,17 +228,20 @@ class MainActivity : AppCompatActivity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(20)); background = rounded(surface, 20) }
         fun label(text: String) = TextView(this).apply { this.text = text; setTextColor(muted); textSize = 12f; letterSpacing = .08f }
         (endpoint.parent as? android.view.ViewGroup)?.removeView(endpoint)
+        (accessToken.parent as? android.view.ViewGroup)?.removeView(accessToken)
         (name.parent as? android.view.ViewGroup)?.removeView(name)
         (output.parent as? android.view.ViewGroup)?.removeView(output)
         content.addView(TextView(this).apply { text = "ตั้งค่า"; setTextColor(white); textSize = 24f; setTypeface(typeface, 1) }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
         content.addView(label("SERVER ADDRESS"))
         content.addView(endpoint, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
+        content.addView(label("ACCESS TOKEN"))
+        content.addView(accessToken, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
         content.addView(label("DISPLAY NAME"))
         content.addView(name, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) })
         content.addView(label("อุปกรณ์เสียง"))
         content.addView(output, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8); bottomMargin = dp(20) })
         content.addView(Button(this).apply { text = "ทดสอบลำโพง"; isAllCaps = false; setTextColor(white); background = pressedBackground(Color.rgb(42, 61, 90), darken(Color.rgb(42, 61, 90))); setOnClickListener { serviceAction(PttService.ACTION_TEST_SPEAKER) } }, LinearLayout.LayoutParams(-1, dp(46)).apply { bottomMargin = dp(12) })
-        content.addView(Button(this).apply { text = "บันทึก"; isAllCaps = false; setTextColor(white); background = pressedBackground(blue, darken(blue)); setOnClickListener { saveSettings(false); syncConnectedProfile(); dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(46)))
+        content.addView(Button(this).apply { text = "บันทึก"; isAllCaps = false; setTextColor(white); background = pressedBackground(blue, darken(blue)); setOnClickListener { saveSettings(false); if (isConnected) connect(); dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(46)))
         content.addView(TextView(this).apply { text = "Version ${BuildConfig.VERSION_NAME}"; setTextColor(muted); textSize = 12f; gravity = Gravity.CENTER; setPadding(0, dp(16), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
         dialog.setContentView(content)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -234,18 +249,28 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setLayout(dp(340), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
     }
     private fun selectRoom(room: Int) {
-        selectedRoom = room.coerceIn(1, 5)
-        roomButtons.forEachIndexed { index, button ->
-            val selected = index + 1 == selectedRoom
-            button.setTextColor(if (selected) Color.WHITE else Color.rgb(205, 217, 233))
-            button.background = pressedBackground(if (selected) Color.rgb(37, 122, 255) else Color.rgb(42, 61, 90), Color.rgb(20, 74, 165))
+        if (room == 5 && isConnected && !isAdmin) {
+            Toast.makeText(this, "เฉพาะ Admin เท่านั้นที่ใช้งาน All ได้", Toast.LENGTH_SHORT).show()
+            return
         }
+        selectedRoom = room.coerceIn(1, 5)
+        updateRoomButtons()
         if (::name.isInitialized && isConnected) {
             startService(Intent(this, PttService::class.java).apply {
                 action = PttService.ACTION_SWITCH_ROOM
                 putExtra(PttService.EXTRA_ROOM, if (selectedRoom == 5) "all" else "room-$selectedRoom")
                 putExtra(PttService.EXTRA_NAME, name.text.toString().trim())
             })
+        }
+    }
+    private fun updateRoomButtons() {
+        roomButtons.forEachIndexed { index, button ->
+            val selected = index + 1 == selectedRoom
+            button.setTextColor(if (selected) Color.WHITE else Color.rgb(205, 217, 233))
+            button.background = pressedBackground(if (selected) Color.rgb(37, 122, 255) else Color.rgb(42, 61, 90), Color.rgb(20, 74, 165))
+            val permitted = index != 4 || !isConnected || isAdmin
+            button.isEnabled = permitted
+            button.alpha = if (permitted) 1f else .45f
         }
     }
     private fun requestPermissionsAndConnect() {
@@ -258,37 +283,37 @@ class MainActivity : AppCompatActivity() {
         if (permissions.isEmpty()) connect() else permissionRequest.launch(permissions.toTypedArray())
     }
     private fun connect() {
+        val token = accessToken.text.toString().trim()
+        if (token.isBlank()) {
+            Toast.makeText(this, "กรุณาใส่ Access Token ในเมนูตั้งค่า", Toast.LENGTH_LONG).show()
+            return
+        }
         saveSettings(false)
         ContextCompat.startForegroundService(this, Intent(this, PttService::class.java).apply {
             action = PttService.ACTION_CONNECT
             putExtra(PttService.EXTRA_ENDPOINT, endpoint.text.toString().trim())
             putExtra(PttService.EXTRA_ROOM, if (selectedRoom == 5) "all" else "room-$selectedRoom")
             putExtra(PttService.EXTRA_NAME, name.text.toString().trim())
+            putExtra(PttService.EXTRA_AUTH_TOKEN, token)
         })
         status.text = "Status : OFF"
         status.setTextColor(Color.rgb(255, 126, 126))
     }
     private fun serviceAction(action: String) = startService(Intent(this, PttService::class.java).setAction(action))
-    private fun syncConnectedProfile() {
-        if (!isConnected) return
-        startService(Intent(this, PttService::class.java).apply {
-            action = PttService.ACTION_SWITCH_ROOM
-            putExtra(PttService.EXTRA_ROOM, if (selectedRoom == 5) "all" else "room-$selectedRoom")
-            putExtra(PttService.EXTRA_NAME, name.text.toString().trim())
-        })
-    }
     private fun saveSettings(showStatus: Boolean) {
         getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit()
             .putString(PREF_ENDPOINT, endpoint.text.toString().trim())
             .putString(PREF_NAME, name.text.toString().trim())
             .putInt(PREF_ROOM, selectedRoom)
             .apply()
+        tokenStore.save(accessToken.text.toString().trim())
         updateServerInfo()
         if (showStatus) Toast.makeText(this, "บันทึกการตั้งค่าแล้ว", Toast.LENGTH_SHORT).show()
     }
     private fun restoreSettings() {
         val preferences = getSharedPreferences(PREFERENCES, MODE_PRIVATE)
         endpoint.setText(preferences.getString(PREF_ENDPOINT, endpoint.text.toString()))
+        accessToken.setText(tokenStore.load())
         name.setText(preferences.getString(PREF_NAME, name.text.toString()))
         selectRoom(preferences.getInt(PREF_ROOM, 1).coerceIn(1, 5))
         updateServerInfo()

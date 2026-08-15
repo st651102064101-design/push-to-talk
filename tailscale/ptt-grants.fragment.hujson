@@ -1,0 +1,23 @@
+// Merge these sections into the existing Tailscale policy.
+// Do not replace unrelated grants used by other systems in your tailnet.
+{
+  "tagOwners": {
+    "tag:ptt-server": ["autogroup:admin"],
+    "tag:ptt-client": ["autogroup:admin"]
+  },
+
+  "grants": [
+    {
+      // Only approved PTT devices can reach the relay port.
+      "src": ["tag:ptt-client"],
+      "dst": ["tag:ptt-server"],
+      "ip": ["tcp:8181"]
+    },
+    {
+      // Tailnet admins retain access to the protected Dashboard.
+      "src": ["autogroup:admin"],
+      "dst": ["tag:ptt-server"],
+      "ip": ["tcp:8181"]
+    }
+  ]
+}
