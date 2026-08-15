@@ -54,7 +54,7 @@ if not errorlevel 1 (
 )
 
 echo Starting PTT Server on port 8181...
-start "PTT Relay Server" cmd /k "cd /d ""%SERVER_DIR%"" ^&^& npm start"
+start "PTT Relay Server" /D "%SERVER_DIR%" cmd /k npm start
 
 set /a RETRIES=0
 :wait_for_server
