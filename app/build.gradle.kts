@@ -6,8 +6,8 @@ android {
         applicationId = "com.example.pushtotalk"
         minSdk = 34
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.1.1"
+        versionCode = 8
+        versionName = "1.2.0-docker"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

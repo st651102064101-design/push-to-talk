@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var membersTitle: TextView
     private lateinit var membersContainer: LinearLayout
     private lateinit var talk: Button
+    private lateinit var talkModeButton: Button
     private lateinit var output: Button
     private var isConnected = false
     private var isAdmin = false
@@ -59,6 +60,8 @@ class MainActivity : AppCompatActivity() {
             val canUseTalkButton = ready && (!busy || selfTalking)
             talk.isEnabled = canUseTalkButton
             talk.alpha = if (canUseTalkButton) 1f else .55f
+            talkModeButton.isEnabled = ready
+            talkModeButton.alpha = if (ready) 1f else .55f
             when {
                 !ready -> {
                     channelStatus.text = "ยังไม่เชื่อมต่อ"
@@ -185,6 +188,16 @@ class MainActivity : AppCompatActivity() {
         }
         box.addView(channelStatus, LinearLayout.LayoutParams(-1, dp(56)).apply { bottomMargin = dp(12) })
 
+        talkModeButton = actionButton("โหมดคุยเต็มหน้าจอ", Color.rgb(42, 61, 90)).apply {
+            isEnabled = false
+            alpha = .55f
+            textSize = 16f
+            setTypeface(typeface, 1)
+            gravity = Gravity.CENTER
+            setOnClickListener { openTalkMode() }
+        }
+        box.addView(talkModeButton, LinearLayout.LayoutParams(-1, dp(54)).apply { bottomMargin = dp(12) })
+
         talk = actionButton("กดค้างเพื่อพูด", blue).apply { isEnabled = false; alpha = .55f; textSize = 26f; setTypeface(typeface, 1); gravity = Gravity.CENTER }
         box.addView(talk, LinearLayout.LayoutParams(-1, dp(130)))
 
@@ -298,6 +311,16 @@ class MainActivity : AppCompatActivity() {
         })
         status.text = "Status : OFF"
         status.setTextColor(Color.rgb(255, 126, 126))
+    }
+    private fun openTalkMode() {
+        if (!isConnected) {
+            Toast.makeText(this, "กรุณาเชื่อมต่อก่อนเข้าโหมดคุย", Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(Intent(this, TalkModeActivity::class.java).putExtra(
+            TalkModeActivity.EXTRA_INITIAL_ROOM,
+            if (selectedRoom == 5) "all" else "room-$selectedRoom"
+        ))
     }
     private fun serviceAction(action: String) = startService(Intent(this, PttService::class.java).setAction(action))
     private fun saveSettings(showStatus: Boolean) {

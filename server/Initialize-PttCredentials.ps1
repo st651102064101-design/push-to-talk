@@ -1,5 +1,6 @@
 param(
-    [string]$Path = (Join-Path $PSScriptRoot ".env")
+    [string]$Path = (Join-Path $PSScriptRoot ".env"),
+    [switch]$RotateDashboardPassword
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,7 +24,45 @@ function Test-PttEnvironment([hashtable]$Values) {
         -and $Values['PTT_DASHBOARD_PASSWORD'].Length -ge 16
 }
 
+function New-PttSecret([int]$Size) {
+    $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $bytes = New-Object byte[] $Size
+        $generator.GetBytes($bytes)
+        return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+    }
+    finally {
+        $generator.Dispose()
+    }
+}
+
 $current = Read-PttEnvironment $Path
+if ($RotateDashboardPassword) {
+    if (-not (Test-PttEnvironment $current)) {
+        throw "Cannot rotate the Dashboard password because the credential file is missing or invalid."
+    }
+
+    $newDashboardPassword = New-PttSecret 16
+    $lines = [string[]]@(
+        "PTT_USER_TOKEN=$($current['PTT_USER_TOKEN'])"
+        "PTT_ADMIN_TOKEN=$($current['PTT_ADMIN_TOKEN'])"
+        "PTT_DASHBOARD_USER=$($current['PTT_DASHBOARD_USER'])"
+        "PTT_DASHBOARD_PASSWORD=$newDashboardPassword"
+    )
+    $temporaryPath = "$Path.rotating"
+    try {
+        [IO.File]::WriteAllLines($temporaryPath, $lines, [Text.Encoding]::ASCII)
+        Move-Item -LiteralPath $temporaryPath -Destination $Path -Force
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+    }
+    Write-Host "Dashboard password rotated. Restart the PTT Server to apply it."
+    exit 0
+}
+
 if (Test-PttEnvironment $current) {
     Write-Host "Secure PTT credentials are ready."
     exit 0

@@ -28,6 +28,7 @@ class PttService : Service() {
     private var roomMembers = arrayListOf<String>()
     private var allMembersView = false
     private var isAdmin = false
+    private var activeRoom = ""
     private var activeAuthToken = ""
     private var activeEndpoint = ""
     private var connectionGeneration = 0
@@ -73,6 +74,7 @@ class PttService : Service() {
         socket?.cancel()
         socket = null
         connected = false; isAdmin = false
+        activeRoom = room
         activeAuthToken = authToken; activeEndpoint = endpoint
         val generation = connectionGeneration
         createChannel()
@@ -89,6 +91,7 @@ class PttService : Service() {
     private fun switchRoom(room: String, name: String) {
         if (socket == null || room.isBlank()) return
         stopRecording()
+        activeRoom = room
         channelBusy = false; activeSpeaker = ""
         roomMembers.clear(); allMembersView = room == "all"
         socket?.send("{\"type\":\"release-talk\"}")
@@ -110,7 +113,7 @@ class PttService : Service() {
                         ws.close(1008, "All requires admin")
                     } else ws.send(joinMessage(room, name))
                 }
-                "joined" -> { connected = true; isAdmin = msg.optString("role") == "admin"; channelBusy = false; activeSpeaker = ""; status("พร้อมพูด", true) }
+                "joined" -> { connected = true; activeRoom = msg.optString("room", activeRoom); isAdmin = msg.optString("role") == "admin"; channelBusy = false; activeSpeaker = ""; status("พร้อมพูด", true) }
                 "floor-granted" -> startRecording()
                 "floor-busy" -> {
                     channelBusy = true
@@ -285,7 +288,7 @@ class PttService : Service() {
     private fun close(message: String, generation: Int = connectionGeneration) {
         if (generation != connectionGeneration) return
         connectionGeneration += 1
-        stopRecording(); socket = null; connected = false; isAdmin = false; channelBusy = false; activeSpeaker = ""; roomMembers.clear(); allMembersView = false; status(message); stopSelf()
+        stopRecording(); socket = null; connected = false; isAdmin = false; activeRoom = ""; channelBusy = false; activeSpeaker = ""; roomMembers.clear(); allMembersView = false; status(message); stopSelf()
     }
     private fun status(text: String, ready: Boolean = false, event: String? = null) = sendBroadcast(
         Intent(ACTION_STATUS).setPackage(packageName)
@@ -299,13 +302,14 @@ class PttService : Service() {
             .putStringArrayListExtra(EXTRA_MEMBERS, ArrayList(roomMembers))
             .putExtra(EXTRA_ALL_MEMBERS_VIEW, allMembersView)
             .putExtra(EXTRA_ADMIN, isAdmin)
+            .putExtra(EXTRA_ACTIVE_ROOM, activeRoom)
     )
     private fun createChannel() { getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID, "Push-to-Talk", NotificationManager.IMPORTANCE_LOW)) }
     override fun onDestroy() { connectionGeneration += 1; stopRecording(); player?.release(); audioManager.abandonAudioFocus(null); audioManager.clearCommunicationDevice(); audioManager.mode = AudioManager.MODE_NORMAL; socket?.close(1000, "closed"); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
     companion object {
         const val ACTION_CONNECT = "ptt.CONNECT"; const val ACTION_SWITCH_ROOM = "ptt.SWITCH_ROOM"; const val ACTION_REQUEST_STATE = "ptt.REQUEST_STATE"; const val ACTION_TEST_SPEAKER = "ptt.TEST_SPEAKER"; const val ACTION_REQUEST_TALK = "ptt.REQUEST_TALK"; const val ACTION_RELEASE_TALK = "ptt.RELEASE_TALK"; const val ACTION_CYCLE_OUTPUT = "ptt.CYCLE_OUTPUT"; const val ACTION_STATUS = "ptt.STATUS"
-        const val EXTRA_ENDPOINT = "endpoint"; const val EXTRA_ROOM = "room"; const val EXTRA_NAME = "name"; const val EXTRA_AUTH_TOKEN = "auth_token"; const val EXTRA_STATUS = "status"; const val EXTRA_READY = "ready"; const val EXTRA_OUTPUT = "output"; const val EXTRA_BUSY = "busy"; const val EXTRA_SPEAKER = "speaker"; const val EXTRA_SELF_TALKING = "self_talking"; const val EXTRA_EVENT = "event"; const val EXTRA_MEMBERS = "members"; const val EXTRA_ALL_MEMBERS_VIEW = "all_members_view"; const val EXTRA_ADMIN = "admin"
+        const val EXTRA_ENDPOINT = "endpoint"; const val EXTRA_ROOM = "room"; const val EXTRA_NAME = "name"; const val EXTRA_AUTH_TOKEN = "auth_token"; const val EXTRA_STATUS = "status"; const val EXTRA_READY = "ready"; const val EXTRA_OUTPUT = "output"; const val EXTRA_BUSY = "busy"; const val EXTRA_SPEAKER = "speaker"; const val EXTRA_SELF_TALKING = "self_talking"; const val EXTRA_EVENT = "event"; const val EXTRA_MEMBERS = "members"; const val EXTRA_ALL_MEMBERS_VIEW = "all_members_view"; const val EXTRA_ADMIN = "admin"; const val EXTRA_ACTIVE_ROOM = "active_room"
         const val EVENT_FLOOR_BUSY = "floor_busy"; const val EVENT_FORBIDDEN_ALL = "forbidden_all"
         private const val CHANNEL_ID = "ptt"; private const val RATE = 16000; private const val IN = AudioFormat.CHANNEL_IN_MONO; private const val OUT = AudioFormat.CHANNEL_OUT_MONO; private const val PCM = AudioFormat.ENCODING_PCM_16BIT; private const val FRAME = 640
     }

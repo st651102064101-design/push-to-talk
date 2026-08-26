@@ -1,5 +1,7 @@
 # Push-to-Talk: Wi-Fi + Internet
 
+Version ปัจจุบัน: **1.2.0-docker**
+
 แอป Android 14+ ใช้ Token Authentication รองรับห้อง 1–4 และห้อง `All` สำหรับ Admin ใช้ relay server เดียวกันทั้งบน Wi-Fi และ Internet โดยผู้พูดในห้องมีได้ทีละคน
 
 ## รัน server
@@ -21,6 +23,30 @@ npm start
 - Android emulator: `ws://10.0.2.2:8181`
 - โทรศัพท์บน Wi-Fi เดียวกัน: `ws://<LAN-IP-ของเครื่อง-server>:8181` เช่น `ws://192.168.1.20:8181`
 - Internet: นำ `server` ไปโฮสต์บน VPS พร้อม reverse proxy/TLS และใส่ `wss://your-domain` ในแอป
+
+## รันด้วย Docker
+
+ต้องติดตั้ง Docker Desktop และเปิดให้ Docker Engine พร้อมทำงานก่อน จากนั้นดับเบิลคลิก `Start-PTT-Docker.bat` โปรแกรมจะตรวจหรือสร้าง `server/.env`, Build image, เปิด Container และเปิด Dashboard ให้อัตโนมัติ
+
+หรือรันด้วย PowerShell จากโฟลเดอร์หลัก:
+
+```powershell
+docker compose up -d --build
+docker compose ps
+docker compose logs -f ptt-server
+```
+
+หยุดและลบ Container โดยไม่ลบ Token ใน `server/.env`:
+
+```powershell
+docker compose down
+```
+
+- Relay: `ws://<IP-ของเครื่อง-Docker>:8181`
+- Dashboard บนเครื่อง Server: `http://localhost:8181/`
+- ค่า Secret อ่านจาก `server/.env` ตอนเริ่ม Container และไม่ถูกคัดลอกเข้า Docker image
+- Container ทำงานด้วยผู้ใช้ที่ไม่ใช่ root, filesystem แบบ read-only, ตัด Linux capabilities และมี Health Check
+- Docker bridge ทำให้ Server แยก `localhost` ไม่ได้ จึงเปิด Dashboard ให้เข้าจาก network แต่ยังบังคับ Username/Password ควรใช้ Firewall/Tailscale จำกัดพอร์ต 8181 เฉพาะอุปกรณ์ที่อนุญาต
 
 ## Authentication และสิทธิ์
 

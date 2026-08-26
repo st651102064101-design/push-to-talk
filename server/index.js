@@ -7,6 +7,7 @@ const userToken = String(process.env.PTT_USER_TOKEN || "").trim();
 const adminToken = String(process.env.PTT_ADMIN_TOKEN || "").trim();
 const dashboardUser = String(process.env.PTT_DASHBOARD_USER || "").trim();
 const dashboardPassword = String(process.env.PTT_DASHBOARD_PASSWORD || "").trim();
+const allowRemoteDashboard = String(process.env.PTT_DASHBOARD_ALLOW_REMOTE || "").trim().toLowerCase() === "true";
 if (userToken.length < 32 || adminToken.length < 32 || dashboardUser.length < 1 || dashboardPassword.length < 16 || userToken === adminToken) {
   console.error("Security configuration is missing or unsafe. Configure server/.env from .env.example.");
   process.exit(1);
@@ -42,7 +43,7 @@ let allFloor = null;
 const allowedRooms = new Set(["room-1", "room-2", "room-3", "room-4", "all"]);
 const dashboard = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PTT status</title><style>body{font-family:system-ui,sans-serif;background:#f6f8fb;color:#182230;max-width:760px;margin:40px auto;padding:0 20px}h1{margin-bottom:4px}.muted{color:#617083}.card{background:#fff;border:1px solid #dce2ea;border-radius:12px;margin:16px 0;padding:16px;box-shadow:0 2px 8px #00000008}ul{padding-left:0;list-style:none}.peer{padding:12px 0;border-top:1px solid #edf0f4}.peer:first-child{border-top:0}.details{color:#617083;font-size:.9rem;line-height:1.55}.state{display:inline-block;margin-left:10px;padding:3px 9px;border-radius:999px;font-size:.75rem;font-weight:700}.speaking{background:#fee4e2;color:#b42318}.ready{background:#dcfae6;color:#067647}.empty{padding:24px;text-align:center}</style></head><body><h1>PTT ออนไลน์</h1><p class="muted" id="updated">กำลังโหลด…</p><main id="rooms"></main><script>const target=document.querySelector('#rooms'),updated=document.querySelector('#updated');function draw(data){updated.textContent='อัปเดตล่าสุด: '+new Date().toLocaleTimeString()+' · ออนไลน์ '+data.totalPeers+' เครื่อง';target.replaceChildren();if(!data.rooms.length){target.innerHTML='<section class="card empty">ยังไม่มีผู้ใช้เข้าห้อง</section>';return}for(const room of data.rooms){const card=document.createElement('section');card.className='card';const h=document.createElement('h2');h.textContent='ห้อง: '+room.id;card.append(h);const list=document.createElement('ul');for(const peer of room.peers){const item=document.createElement('li');item.className='peer';const title=document.createElement('strong');title.textContent=peer.name;const state=document.createElement('span');state.className='state '+(peer.speaking?'speaking':'ready');state.textContent=peer.speaking?'กำลังพูด':'พร้อม';const details=document.createElement('div');details.className='details';details.textContent='อุปกรณ์: '+(peer.device||'ไม่ทราบ')+' · IP: '+peer.ip+' · เชื่อมต่อ: '+peer.connectedMinutes+' นาที · กดพูด: '+peer.talkCount+' ครั้ง';item.append(title,state,details);list.append(item)}card.append(list);target.append(card)}}async function refresh(){try{draw(await fetch('/status',{cache:'no-store'}).then(r=>r.json()))}catch{updated.textContent='ไม่สามารถเชื่อมต่อ server ได้'}}refresh();setInterval(refresh,250)</script></body></html>`;
 const server = http.createServer((req, res) => {
-  if (!isLoopback(req)) {
+  if (!allowRemoteDashboard && !isLoopback(req)) {
     res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     return res.end("Dashboard is available on localhost only");
   }
@@ -143,4 +144,7 @@ wss.on("connection", (peer, request) => {
   peer.on("close", () => leave(peer));
 });
 setInterval(() => { for (const room of rooms.values()) if (room.floor?.expires < Date.now()) release(room, room.floor); }, 1000);
-server.listen(port, () => console.log("PTT relay and dashboard listening on port " + port));
+server.listen(port, () => {
+  console.log("PTT relay and dashboard listening on port " + port);
+  if (allowRemoteDashboard) console.warn("Dashboard remote access is enabled; protect port 8181 and keep Dashboard credentials private.");
+});
