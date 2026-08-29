@@ -255,7 +255,7 @@ class MainActivity : AppCompatActivity() {
         content.addView(output, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8); bottomMargin = dp(20) })
         content.addView(Button(this).apply { text = "ทดสอบลำโพง"; isAllCaps = false; setTextColor(white); background = pressedBackground(Color.rgb(42, 61, 90), darken(Color.rgb(42, 61, 90))); setOnClickListener { serviceAction(PttService.ACTION_TEST_SPEAKER) } }, LinearLayout.LayoutParams(-1, dp(46)).apply { bottomMargin = dp(12) })
         content.addView(Button(this).apply { text = "บันทึก"; isAllCaps = false; setTextColor(white); background = pressedBackground(blue, darken(blue)); setOnClickListener { saveSettings(false); if (isConnected) connect(); dialog.dismiss() } }, LinearLayout.LayoutParams(-1, dp(46)))
-        content.addView(TextView(this).apply { text = "Version ${BuildConfig.VERSION_NAME}"; setTextColor(muted); textSize = 12f; gravity = Gravity.CENTER; setPadding(0, dp(16), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
+        content.addView(TextView(this).apply { text = "เวอร์ชัน ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"; setTextColor(muted); textSize = 12f; gravity = Gravity.CENTER; setPadding(0, dp(16), 0, 0) }, LinearLayout.LayoutParams(-1, -2))
         dialog.setContentView(content)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.show()

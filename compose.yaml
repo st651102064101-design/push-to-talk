@@ -1,6 +1,6 @@
 services:
   ptt-server:
-    image: ptt-relay:1.2.0-docker
+    image: ptt-relay:1.2.2-docker
     build:
       context: ./server
       dockerfile: Dockerfile

@@ -7,3 +7,11 @@ node_modules/
 .env
 .env.invalid-*
 *.iml
+keystore.properties
+signing/
+*.jks
+*.keystore
+*.p12
+.kotlin/
+app/release/
+/APK OK/
