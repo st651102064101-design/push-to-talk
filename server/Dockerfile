@@ -7,7 +7,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 FROM node:24-alpine
 
 LABEL org.opencontainers.image.title="PTT Relay Server" \
-      org.opencontainers.image.version="1.2.2-docker"
+      org.opencontainers.image.version="1.2.3-docker"
 
 ENV NODE_ENV=production \
     PORT=8181

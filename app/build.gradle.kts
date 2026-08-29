@@ -2,8 +2,8 @@ import java.util.Properties
 
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 
-val pttVersionName = "1.2.2-docker"
-val pttVersionCode = 10
+val pttVersionName = "1.2.3-docker"
+val pttVersionCode = 11
 val releasePropertiesFile = rootProject.file("keystore.properties")
 val releaseProperties = Properties().apply {
     if (releasePropertiesFile.exists()) {
@@ -59,31 +59,27 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 
-val copyVersionedDebugApk by tasks.registering(Copy::class) {
-    description = "Creates a debug APK copy whose filename includes the app version."
-    from(layout.buildDirectory.dir("outputs/apk/debug")) {
-        include("app-debug.apk")
-        rename { "PTT-$pttVersionName-debug.apk" }
-    }
-    into(layout.buildDirectory.dir("outputs/apk/debug"))
-}
-
-val copyVersionedReleaseApk by tasks.registering(Copy::class) {
-    description = "Creates a release APK copy whose filename includes the app version."
-    from(layout.buildDirectory.dir("outputs/apk/release")) {
-        include("app-release.apk")
-        rename { "PTT-$pttVersionName-release.apk" }
-    }
-    from(layout.buildDirectory.dir("outputs/apk/release")) {
-        include("app-release-unsigned.apk")
-        rename { "PTT-$pttVersionName-release-unsigned.apk" }
-    }
-    into(layout.buildDirectory.dir("outputs/apk/release"))
-}
-
 tasks.matching { it.name == "assembleDebug" }.configureEach {
-    finalizedBy(copyVersionedDebugApk)
+    doLast {
+        val sourceApk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile
+        if (sourceApk.isFile) {
+            val outputDir = layout.buildDirectory.dir("outputs/versioned-apk/debug").get().asFile
+            outputDir.mkdirs()
+            sourceApk.copyTo(outputDir.resolve("PTT-$pttVersionName-debug.apk"), overwrite = true)
+        }
+    }
 }
 tasks.matching { it.name == "assembleRelease" }.configureEach {
-    finalizedBy(copyVersionedReleaseApk)
+    doLast {
+        val releaseDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val signedApk = releaseDir.resolve("app-release.apk")
+        val unsignedApk = releaseDir.resolve("app-release-unsigned.apk")
+        val sourceApk = if (signedApk.isFile) signedApk else unsignedApk
+        if (sourceApk.isFile) {
+            val outputDir = layout.buildDirectory.dir("outputs/versioned-apk/release").get().asFile
+            outputDir.mkdirs()
+            val suffix = if (sourceApk == signedApk) "release" else "release-unsigned"
+            sourceApk.copyTo(outputDir.resolve("PTT-$pttVersionName-$suffix.apk"), overwrite = true)
+        }
+    }
 }

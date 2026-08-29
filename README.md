@@ -1,8 +1,8 @@
 # Push-to-Talk: Wi-Fi + Internet
 
-Version ปัจจุบัน: **1.2.2-docker** (Android versionCode: 10)
+Version ปัจจุบัน: **1.2.3-docker** (Android versionCode: 11)
 
-แอปจะแสดงเลขเวอร์ชันและ versionCode ในเมนูตั้งค่าจากข้อมูลของ APK โดยตรง เมื่อ Build ด้วย Gradle ระบบจะสร้างสำเนา APK ที่มีเลขเวอร์ชันในชื่อไฟล์ให้อัตโนมัติ เช่น `PTT-1.2.2-docker-debug.apk` หรือ `PTT-1.2.2-docker-release.apk`
+แอปจะแสดงเลขเวอร์ชันและ versionCode ในเมนูตั้งค่าจากข้อมูลของ APK โดยตรง เมื่อ Build ด้วย Gradle ระบบจะสร้างสำเนา APK ที่มีเลขเวอร์ชันในชื่อไฟล์ให้อัตโนมัติ เช่น `PTT-1.2.3-docker-debug.apk` หรือ `PTT-1.2.3-docker-release.apk`
 
 ประวัติการเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
 
@@ -13,8 +13,8 @@ Version ปัจจุบัน: **1.2.2-docker** (Android versionCode: 10)
 .\gradlew.bat :app:assembleRelease
 ```
 
-- Debug: `app/build/outputs/apk/debug/PTT-1.2.2-docker-debug.apk`
-- Release ที่เซ็นแล้ว: `app/build/outputs/apk/release/PTT-1.2.2-docker-release.apk`
+- Debug: `app/build/outputs/versioned-apk/debug/PTT-1.2.3-docker-debug.apk`
+- Release ที่เซ็นแล้ว: `app/build/outputs/versioned-apk/release/PTT-1.2.3-docker-release.apk`
 - หาก Release ยังไม่ได้เซ็น ระบบจะใช้คำว่า `release-unsigned` ในชื่อไฟล์ ห้ามนำไฟล์ดังกล่าวไปติดตั้งใช้งานจริง
 - Android Studio อาจแสดงไฟล์ชื่อมาตรฐานควบคู่กัน แต่เลขเวอร์ชันภายในแอปยังอ่านจาก APK โดยตรงเสมอ
 
