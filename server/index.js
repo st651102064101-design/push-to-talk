@@ -4,6 +4,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createApnsNotifier } from "./apns.js";
 
 const port = Number(process.env.PORT || 8181);
+const authRequired = String(process.env.PTT_AUTH_REQUIRED || "true").trim().toLowerCase() !== "false";
 const userToken = String(process.env.PTT_USER_TOKEN || "").trim();
 const adminToken = String(process.env.PTT_ADMIN_TOKEN || "").trim();
 const dashboardUser = String(process.env.PTT_DASHBOARD_USER || "").trim();
@@ -14,7 +15,8 @@ try { apns = createApnsNotifier(); } catch (error) {
   console.error("APNs configuration error:", error.message);
   process.exit(1);
 }
-if (userToken.length < 32 || adminToken.length < 32 || dashboardUser.length < 1 || dashboardPassword.length < 16 || userToken === adminToken) {
+const tokenConfigurationUnsafe = userToken.length < 32 || adminToken.length < 32 || userToken === adminToken;
+if ((authRequired && tokenConfigurationUnsafe) || dashboardUser.length < 1 || dashboardPassword.length < 16) {
   console.error("Security configuration is missing or unsafe. Configure server/.env from .env.example.");
   process.exit(1);
 }
@@ -24,6 +26,7 @@ const safeEqual = (actual, expected) => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 const roleFromRequest = request => {
+  if (!authRequired) return "admin";
   const authorization = String(request.headers.authorization || "");
   if (!authorization.startsWith("Bearer ")) return null;
   const token = authorization.slice(7);
@@ -189,6 +192,8 @@ wss.on("connection", (peer, request) => {
 setInterval(() => { for (const room of rooms.values()) if (room.floor?.expires < Date.now()) release(room, room.floor); }, 1000);
 server.listen(port, () => {
   console.log("PTT relay and dashboard listening on port " + port);
+  if (authRequired) console.log("PTT Access Token authentication: enabled");
+  else console.warn("PTT Access Token authentication: DISABLED (testing only)");
   console.log(`Apple Push to Talk notifications: ${apns.enabled ? "enabled" : "disabled"}`);
   if (allowRemoteDashboard) console.warn("Dashboard remote access is enabled; protect port 8181 and keep Dashboard credentials private.");
 });

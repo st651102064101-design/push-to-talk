@@ -93,10 +93,6 @@ class PttService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
         )
 
-        if (authToken.isBlank()) {
-            disconnect("กรุณาระบุ Access Token")
-            return
-        }
         if (!endpoint.startsWith("ws://") && !endpoint.startsWith("wss://")) {
             disconnect("URL ต้องขึ้นต้นด้วย ws:// หรือ wss://")
             return
@@ -117,10 +113,11 @@ class PttService : Service() {
         val generation = connectionGeneration
         selectFirstSpeaker()
 
-        val request = Request.Builder()
-            .url(endpoint)
-            .header("Authorization", "Bearer $authToken")
-            .build()
+        val requestBuilder = Request.Builder().url(endpoint)
+        if (authToken.isNotBlank()) {
+            requestBuilder.header("Authorization", "Bearer $authToken")
+        }
+        val request = requestBuilder.build()
         socket = OkHttpClient.Builder()
             .pingInterval(15, TimeUnit.SECONDS)
             .build()

@@ -503,24 +503,41 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 autocorrect: false,
               ),
               const SizedBox(height: 14),
-              const _Label('ACCESS TOKEN'),
-              const SizedBox(height: 7),
-              TextField(
-                controller: _token,
-                obscureText: _hideToken,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _hideToken = !_hideToken),
-                    icon: Icon(
-                      _hideToken
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded,
+              if (PttController.accessTokenEnabled) ...[
+                const _Label('ACCESS TOKEN'),
+                const SizedBox(height: 7),
+                TextField(
+                  controller: _token,
+                  obscureText: _hideToken,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    suffixIcon: IconButton(
+                      onPressed: () =>
+                          setState(() => _hideToken = !_hideToken),
+                      icon: Icon(
+                        _hideToken
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ] else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF4CC),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'โหมดทดสอบ: ปิดการใช้งาน Access Token ชั่วคราว',
+                    style: TextStyle(
+                      color: Color(0xFF8A5A00),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 14),
               const _Label('DISPLAY NAME'),
               const SizedBox(height: 7),

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.1-test — กำลังทดสอบ — 2026-09-05
+
+- ปิดการตรวจ Access Token ชั่วคราวด้วย `PTT_AUTH_REQUIRED=false`; Dashboard ยังคงบังคับ Username/Password
+- ซ่อนช่อง Access Token ใน Flutter และลบ Token เดิมออกจาก Secure Storage เมื่อเปิดแอป
+- อนุญาตให้ผู้ทดสอบทุกเครื่องใช้ห้อง 1–4 และ `All` ระหว่างโหมดทดสอบ
+- เปลี่ยน Server เริ่มต้นของ Flutter เป็น `ws://100.112.185.32:8181`
+- เพิ่มเวอร์ชัน Flutter เป็น 1.3.1 (build 13) และ Docker image เป็น `ptt-relay:1.3.1-test`
+- สร้างและตรวจลายเซ็น Release APK `PTT-Flutter-1.3.1-release.apk` สำเร็จ
+
 ## 1.3.0-flutter — กำลังพัฒนา — 2026-09-03
 
 - เก็บ Kotlin/Docker รุ่น `v1.2.3-docker` ไว้เป็นรุ่นสำรองที่ใช้งานได้ และแยกงานใหม่ไว้บน branch `codex/flutter-migration`

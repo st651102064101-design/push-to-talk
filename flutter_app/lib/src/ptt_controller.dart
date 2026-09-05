@@ -16,6 +16,7 @@ class PttController extends ChangeNotifier {
   static const _nameKey = 'display_name';
   static const _roomKey = 'room';
   static const _tokenKey = 'access_token';
+  static const accessTokenEnabled = false;
 
   final PttPlatform _platform;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
@@ -23,7 +24,7 @@ class PttController extends ChangeNotifier {
   );
   StreamSubscription<Map<String, dynamic>>? _statusSubscription;
 
-  String endpoint = 'ws://100.108.250.41:8181';
+  String endpoint = 'ws://100.112.185.32:8181';
   String displayName = Platform.isIOS ? 'iPhone' : 'Android';
   String token = '';
   int selectedRoom = 1;
@@ -62,7 +63,12 @@ class PttController extends ChangeNotifier {
     endpoint = preferences.getString(_endpointKey) ?? endpoint;
     displayName = preferences.getString(_nameKey) ?? displayName;
     selectedRoom = (preferences.getInt(_roomKey) ?? 1).clamp(1, 5).toInt();
-    token = await _secureStorage.read(key: _tokenKey) ?? '';
+    if (accessTokenEnabled) {
+      token = await _secureStorage.read(key: _tokenKey) ?? '';
+    } else {
+      token = '';
+      await _secureStorage.delete(key: _tokenKey);
+    }
     versionLabel = 'Flutter ${await _platform.appVersion()}';
     _statusSubscription = _platform.statusEvents.listen(
       _handleStatus,
@@ -120,7 +126,7 @@ class PttController extends ChangeNotifier {
     if (newName.trim().isEmpty) return 'กรุณาระบุ Display Name';
     endpoint = endpointValue;
     displayName = newName.trim();
-    token = newToken.trim();
+    token = accessTokenEnabled ? newToken.trim() : '';
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_endpointKey, endpoint);
     await preferences.setString(_nameKey, displayName);
@@ -154,7 +160,9 @@ class PttController extends ChangeNotifier {
   }
 
   Future<String?> connect() async {
-    if (token.isEmpty) return 'กรุณาใส่ Access Token ในเมนูตั้งค่า';
+    if (accessTokenEnabled && token.isEmpty) {
+      return 'กรุณาใส่ Access Token ในเมนูตั้งค่า';
+    }
     final uri = Uri.tryParse(endpoint);
     if (uri == null ||
         !const {'ws', 'wss'}.contains(uri.scheme) ||

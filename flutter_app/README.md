@@ -1,12 +1,12 @@
 # PTT Flutter
 
-รุ่นทดลองข้ามแพลตฟอร์ม **1.3.0 (build 12)** ทำงานคู่กับ Kotlin `v1.2.3-docker` และใช้ WebSocket protocol/Relay Server เดิม
+รุ่นทดลองข้ามแพลตฟอร์ม **1.3.1 (build 13)** ทำงานคู่กับ Kotlin `v1.2.3-docker` และใช้ WebSocket protocol/Relay Server เดิม
 
 ## สถานะปัจจุบัน
 
 - Android: หน้าจอและฟังก์ชันหลักครบ, native audio/service Compile ผ่าน และสร้าง Release APK ที่ลงนามแล้วสำเร็จ
 - iOS: มี Flutter UI, Swift WebSocket/audio bridge และ Apple PushToTalk lifecycle แล้ว แต่ต้อง Compile, Sign และทดสอบบน macOS กับ iPhone จริง
-- Server: รองรับ APNs แบบเลือกเปิดใช้ รุ่น Docker ใหม่ชื่อ `ptt-relay:1.3.0-flutter`; ค่าเริ่มต้นปิด APNs จึงไม่กระทบ Android
+- Server: รุ่นทดสอบชื่อ `ptt-relay:1.3.1-test`, ปิด Access Token ชั่วคราวด้วย `PTT_AUTH_REQUIRED=false` แต่ยังคงรหัส Dashboard และรองรับ APNs แบบเลือกเปิดใช้
 
 ## Build Android
 
@@ -17,8 +17,8 @@ flutter build apk --debug
 flutter build apk --release
 ```
 
-- Debug: `flutter_app/build/app/outputs/versioned-apk/debug/PTT-Flutter-1.3.0-debug.apk`
-- Release ที่เซ็นแล้ว: `flutter_app/build/app/outputs/versioned-apk/release/PTT-Flutter-1.3.0-release.apk`
+- Debug: `flutter_app/build/app/outputs/versioned-apk/debug/PTT-Flutter-1.3.1-debug.apk`
+- Release ที่เซ็นแล้ว: `flutter_app/build/app/outputs/versioned-apk/release/PTT-Flutter-1.3.1-release.apk`
 - รุ่น Flutter ใช้ Application ID `com.example.ptt_flutter` จึงติดตั้งคู่กับ Kotlin เดิมได้
 
 ## เตรียม iOS บน Mac

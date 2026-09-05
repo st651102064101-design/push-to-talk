@@ -80,8 +80,8 @@ final class PttBridge: NSObject, FlutterStreamHandler {
       room = values["room"] as? String ?? "room-1"
       displayName = values["name"] as? String ?? "iPhone"
       authToken = values["token"] as? String ?? ""
-      guard URL(string: endpoint) != nil, !authToken.isEmpty else {
-        result(FlutterError(code: "INVALID_CONNECTION", message: "Server Address หรือ Token ไม่ถูกต้อง", details: nil))
+      guard URL(string: endpoint) != nil else {
+        result(FlutterError(code: "INVALID_CONNECTION", message: "Server Address ไม่ถูกต้อง", details: nil))
         return
       }
       shouldReconnect = true
@@ -168,7 +168,9 @@ final class PttBridge: NSObject, FlutterStreamHandler {
     }
     closeWebSocket()
     var request = URLRequest(url: url)
-    request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+    if !authToken.isEmpty {
+      request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+    }
     let session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
     let task = session.webSocketTask(with: request)
     webSocketSession = session

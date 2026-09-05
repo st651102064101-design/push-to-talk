@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import WebSocket from "ws";
 
 const port = 8183;
+const anonymousPort = 8184;
 const userToken = "u".repeat(64);
 const adminToken = "a".repeat(64);
 const dashboardUser = "admin";
@@ -20,17 +21,19 @@ const relay = spawn(process.execPath, ["index.js"], {
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
+let anonymousRelay;
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
-const waitForServer = async () => {
+const waitForServer = async targetPort => {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    try { await fetch(`http://127.0.0.1:${port}/`); return; } catch { await delay(50); }
+    try { await fetch(`http://127.0.0.1:${targetPort}/`); return; } catch { await delay(50); }
   }
   throw new Error("Relay did not start");
 };
-const connect = token => {
+const connect = (token, targetPort = port) => {
   const messages = [];
-  const ws = new WebSocket(`ws://127.0.0.1:${port}`, { headers: { Authorization: `Bearer ${token}` } });
+  const options = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  const ws = new WebSocket(`ws://127.0.0.1:${targetPort}`, options);
   ws.on("message", raw => messages.push(JSON.parse(raw)));
   const next = async type => {
     for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -44,7 +47,7 @@ const connect = token => {
 };
 
 try {
-  await waitForServer();
+  await waitForServer(port);
 
   const unauthenticatedDashboard = await fetch(`http://127.0.0.1:${port}/status`);
   assert.equal(unauthenticatedDashboard.status, 401);
@@ -77,9 +80,31 @@ try {
   assert.equal(joined.room, "all");
   assert.equal(joined.role, "admin");
 
+  anonymousRelay = spawn(process.execPath, ["index.js"], {
+    cwd: import.meta.dirname,
+    env: {
+      ...process.env,
+      PORT: String(anonymousPort),
+      PTT_AUTH_REQUIRED: "false",
+      PTT_USER_TOKEN: "",
+      PTT_ADMIN_TOKEN: "",
+      PTT_DASHBOARD_USER: dashboardUser,
+      PTT_DASHBOARD_PASSWORD: dashboardPassword,
+      APNS_ENABLED: "false"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  await waitForServer(anonymousPort);
+  const anonymous = connect(null, anonymousPort);
+  assert.equal((await anonymous.next("authenticated")).role, "admin");
+  anonymous.ws.send(JSON.stringify({ type: "join", room: "all", name: "Tester" }));
+  assert.equal((await anonymous.next("joined")).room, "all");
+  anonymous.ws.close();
+
   user.ws.close();
   admin.ws.close();
   console.log("SECURITY_TESTS_OK");
 } finally {
+  anonymousRelay?.kill();
   relay.kill();
 }
