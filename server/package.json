@@ -1,7 +1,7 @@
 {
   "name": "ptt-relay",
   "private": true,
-  "version": "1.2.3-docker",
+  "version": "1.3.0-flutter.0",
   "type": "module",
   "scripts": {
     "start": "node --env-file=.env index.js",

@@ -5,3 +5,4 @@ node_modules
 *.log
 security-test.js
 Initialize-PttCredentials.ps1
+apns/

@@ -15,3 +15,4 @@ signing/
 .kotlin/
 app/release/
 /APK OK/
+server/apns/*.p8

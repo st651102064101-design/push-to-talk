@@ -1,6 +1,7 @@
 import http from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createApnsNotifier } from "./apns.js";
 
 const port = Number(process.env.PORT || 8181);
 const userToken = String(process.env.PTT_USER_TOKEN || "").trim();
@@ -8,6 +9,11 @@ const adminToken = String(process.env.PTT_ADMIN_TOKEN || "").trim();
 const dashboardUser = String(process.env.PTT_DASHBOARD_USER || "").trim();
 const dashboardPassword = String(process.env.PTT_DASHBOARD_PASSWORD || "").trim();
 const allowRemoteDashboard = String(process.env.PTT_DASHBOARD_ALLOW_REMOTE || "").trim().toLowerCase() === "true";
+let apns;
+try { apns = createApnsNotifier(); } catch (error) {
+  console.error("APNs configuration error:", error.message);
+  process.exit(1);
+}
 if (userToken.length < 32 || adminToken.length < 32 || dashboardUser.length < 1 || dashboardPassword.length < 16 || userToken === adminToken) {
   console.error("Security configuration is missing or unsafe. Configure server/.env from .env.example.");
   process.exit(1);
@@ -39,6 +45,7 @@ const isLoopback = request => {
   return address === "127.0.0.1" || address === "::1";
 };
 const rooms = new Map();
+const pushRegistrations = new Map();
 let allFloor = null;
 const allowedRooms = new Set(["room-1", "room-2", "room-3", "room-4", "all"]);
 const dashboard = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PTT status</title><style>body{font-family:system-ui,sans-serif;background:#f6f8fb;color:#182230;max-width:760px;margin:40px auto;padding:0 20px}h1{margin-bottom:4px}.muted{color:#617083}.card{background:#fff;border:1px solid #dce2ea;border-radius:12px;margin:16px 0;padding:16px;box-shadow:0 2px 8px #00000008}ul{padding-left:0;list-style:none}.peer{padding:12px 0;border-top:1px solid #edf0f4}.peer:first-child{border-top:0}.details{color:#617083;font-size:.9rem;line-height:1.55}.state{display:inline-block;margin-left:10px;padding:3px 9px;border-radius:999px;font-size:.75rem;font-weight:700}.speaking{background:#fee4e2;color:#b42318}.ready{background:#dcfae6;color:#067647}.empty{padding:24px;text-align:center}</style></head><body><h1>PTT ออนไลน์</h1><p class="muted" id="updated">กำลังโหลด…</p><main id="rooms"></main><script>const target=document.querySelector('#rooms'),updated=document.querySelector('#updated');function draw(data){updated.textContent='อัปเดตล่าสุด: '+new Date().toLocaleTimeString()+' · ออนไลน์ '+data.totalPeers+' เครื่อง';target.replaceChildren();if(!data.rooms.length){target.innerHTML='<section class="card empty">ยังไม่มีผู้ใช้เข้าห้อง</section>';return}for(const room of data.rooms){const card=document.createElement('section');card.className='card';const h=document.createElement('h2');h.textContent='ห้อง: '+room.id;card.append(h);const list=document.createElement('ul');for(const peer of room.peers){const item=document.createElement('li');item.className='peer';const title=document.createElement('strong');title.textContent=peer.name;const state=document.createElement('span');state.className='state '+(peer.speaking?'speaking':'ready');state.textContent=peer.speaking?'กำลังพูด':'พร้อม';const details=document.createElement('div');details.className='details';details.textContent='อุปกรณ์: '+(peer.device||'ไม่ทราบ')+' · IP: '+peer.ip+' · เชื่อมต่อ: '+peer.connectedMinutes+' นาที · กดพูด: '+peer.talkCount+' ครั้ง';item.append(title,state,details);list.append(item)}card.append(list);target.append(card)}}async function refresh(){try{draw(await fetch('/status',{cache:'no-store'}).then(r=>r.json()))}catch{updated.textContent='ไม่สามารถเชื่อมต่อ server ได้'}}refresh();setInterval(refresh,250)</script></body></html>`;
@@ -76,6 +83,34 @@ const wss = new WebSocketServer({
 });
 const emit = (room, value, except) => { const text = JSON.stringify(value); for (const p of room.peers) if (p !== except && p.readyState === WebSocket.OPEN) p.send(text); };
 const emitEverywhere = (value, except) => { for (const room of rooms.values()) emit(room, value, except); };
+const registerPushToken = (peer, token) => {
+  const normalized = String(token || "").trim().toLowerCase();
+  if (!/^[a-f0-9]{32,400}$/.test(normalized) || !peer.roomId) return false;
+  if (peer.pushToken && peer.pushToken !== normalized) pushRegistrations.delete(peer.pushToken);
+  peer.pushToken = normalized;
+  pushRegistrations.set(normalized, { roomId: peer.roomId, name: peer.name, peerId: peer.id, updatedAt: Date.now() });
+  return true;
+};
+const unregisterPushToken = peer => {
+  if (peer.pushToken) pushRegistrations.delete(peer.pushToken);
+  peer.pushToken = null;
+};
+const notifyPushTargets = (roomId, speaker, exceptPeer) => {
+  if (!apns.enabled) return;
+  const now = Date.now();
+  for (const [token, registration] of pushRegistrations) {
+    if (now - registration.updatedAt > 24 * 60 * 60 * 1000) { pushRegistrations.delete(token); continue; }
+    const visible = roomId === "all" || registration.roomId === roomId;
+    if (!visible || registration.peerId === exceptPeer.id) continue;
+    apns.send(token, { activeSpeaker: speaker, room: roomId }).then(result => {
+      if (result.status === 410 || result.reason === "BadDeviceToken" || result.reason === "Unregistered") {
+        pushRegistrations.delete(token);
+      } else if (!result.ok) {
+        console.warn(`APNs delivery failed (${result.status || "network"}${result.reason ? `: ${result.reason}` : ""})`);
+      }
+    }).catch(error => console.warn("APNs delivery failed:", error.message));
+  }
+};
 function broadcastMembers() {
   const allPeers = [...rooms.values()].flatMap(room => [...room.peers]);
   for (const viewer of allPeers) {
@@ -122,8 +157,15 @@ wss.on("connection", (peer, request) => {
       if (!allowedRooms.has(id)) { peer.send(JSON.stringify({ type: "error", code: "invalid_room", message: "ไม่พบห้องที่ระบุ" })); return; }
       if (id === "all" && peer.role !== "admin") { peer.send(JSON.stringify({ type: "error", code: "forbidden_all", message: "Token นี้ไม่มีสิทธิ์ใช้งาน All" })); return; }
       leave(peer); const room = rooms.get(id) || { peers: new Set(), floor: null }; rooms.set(id, room); peer.room = room; peer.roomId = id; peer.name = String(msg.name || "Guest").slice(0, 30); peer.device = String(msg.device || "Unknown").slice(0, 80); room.peers.add(peer);
+      if (peer.pushToken) registerPushToken(peer, peer.pushToken);
       peer.send(JSON.stringify({ type: "joined", room: id, id: peer.id, role: peer.role }));
       broadcastMembers();
+    } else if (msg.type === "register-push") {
+      const registered = registerPushToken(peer, msg.token);
+      peer.send(JSON.stringify({ type: "push-registered", enabled: apns.enabled, registered }));
+    } else if (msg.type === "unregister-push") {
+      unregisterPushToken(peer);
+      peer.send(JSON.stringify({ type: "push-unregistered" }));
     } else if (msg.type === "request-talk" && peer.room) {
       const isAll = peer.roomId === "all";
       const roomBusy = peer.room.floor && peer.room.floor !== peer;
@@ -138,6 +180,7 @@ wss.on("connection", (peer, request) => {
         peer.send(JSON.stringify({ type: "floor-granted" }));
         if (isAll) emitEverywhere({ type: "speaker", active: true, name: peer.name }, peer);
         else emit(peer.room, { type: "speaker", active: true, name: peer.name }, peer);
+        notifyPushTargets(peer.roomId, peer.name, peer);
       }
     } else if (msg.type === "release-talk") release(peer.room, peer);
   });
@@ -146,5 +189,9 @@ wss.on("connection", (peer, request) => {
 setInterval(() => { for (const room of rooms.values()) if (room.floor?.expires < Date.now()) release(room, room.floor); }, 1000);
 server.listen(port, () => {
   console.log("PTT relay and dashboard listening on port " + port);
+  console.log(`Apple Push to Talk notifications: ${apns.enabled ? "enabled" : "disabled"}`);
   if (allowRemoteDashboard) console.warn("Dashboard remote access is enabled; protect port 8181 and keep Dashboard credentials private.");
 });
+const shutdown = () => { apns.close(); server.close(() => process.exit(0)); };
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

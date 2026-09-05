@@ -15,7 +15,8 @@ const relay = spawn(process.execPath, ["index.js"], {
     PTT_USER_TOKEN: userToken,
     PTT_ADMIN_TOKEN: adminToken,
     PTT_DASHBOARD_USER: dashboardUser,
-    PTT_DASHBOARD_PASSWORD: dashboardPassword
+    PTT_DASHBOARD_PASSWORD: dashboardPassword,
+    APNS_ENABLED: "false"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -64,6 +65,10 @@ try {
   assert.equal((await user.next("error")).code, "forbidden_all");
   user.ws.send(JSON.stringify({ type: "join", room: "room-1", name: "User" }));
   assert.equal((await user.next("joined")).room, "room-1");
+  user.ws.send(JSON.stringify({ type: "register-push", token: "f".repeat(64) }));
+  const pushRegistration = await user.next("push-registered");
+  assert.equal(pushRegistration.registered, true);
+  assert.equal(pushRegistration.enabled, false);
 
   const admin = connect(adminToken);
   assert.equal((await admin.next("authenticated")).role, "admin");

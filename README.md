@@ -1,10 +1,14 @@
 # Push-to-Talk: Wi-Fi + Internet
 
-Version ปัจจุบัน: **1.2.3-docker** (Android versionCode: 11)
+รุ่นใช้งานจริงปัจจุบัน: **1.2.3-docker** (Kotlin, Android versionCode: 11)
+
+รุ่นทดลองข้ามแพลตฟอร์ม: **1.3.0-flutter** (Flutter 1.3.0, build 12) อยู่ในโฟลเดอร์ `flutter_app` และใช้ Server/protocol เดิม รุ่น Kotlin `v1.2.3-docker` ยังเก็บไว้และไม่ได้ถูกเขียนทับ
 
 แอปจะแสดงเลขเวอร์ชันและ versionCode ในเมนูตั้งค่าจากข้อมูลของ APK โดยตรง เมื่อ Build ด้วย Gradle ระบบจะสร้างสำเนา APK ที่มีเลขเวอร์ชันในชื่อไฟล์ให้อัตโนมัติ เช่น `PTT-1.2.3-docker-debug.apk` หรือ `PTT-1.2.3-docker-release.apk`
 
 ประวัติการเปลี่ยนแปลง: [CHANGELOG.md](CHANGELOG.md)
+
+แผนและวิธี Build รุ่น Flutter: [flutter_app/README.md](flutter_app/README.md)
 
 ## Build APK พร้อมเลขเวอร์ชัน
 

@@ -7,14 +7,14 @@ RUN npm ci --omit=dev && npm cache clean --force
 FROM node:24-alpine
 
 LABEL org.opencontainers.image.title="PTT Relay Server" \
-      org.opencontainers.image.version="1.2.3-docker"
+      org.opencontainers.image.version="1.3.0-flutter"
 
 ENV NODE_ENV=production \
     PORT=8181
 
 WORKDIR /app
 COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules
-COPY --chown=node:node package.json package-lock.json index.js ./
+COPY --chown=node:node package.json package-lock.json index.js apns.js ./
 
 USER node
 EXPOSE 8181

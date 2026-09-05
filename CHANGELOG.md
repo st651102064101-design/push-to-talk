@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0-flutter — กำลังพัฒนา — 2026-09-03
+
+- เก็บ Kotlin/Docker รุ่น `v1.2.3-docker` ไว้เป็นรุ่นสำรองที่ใช้งานได้ และแยกงานใหม่ไว้บน branch `codex/flutter-migration`
+- สร้าง Flutter app แยกต่างหาก รองรับหน้าหลัก โหมดคุยเต็มหน้าจอ ห้อง 1–4/All สถานะผู้พูด รายชื่อออนไลน์ ตั้งค่า Server/Token/ชื่อ และเลขเวอร์ชัน
+- Android ใช้ Kotlin native สำหรับ WebSocket, PCM 16 kHz, ไมโครโฟน, ลำโพง/Bluetooth และ Foreground Service เพื่อรักษาการเชื่อมต่อเมื่อหมุนหน้าจอ
+- เก็บ Access Token ใน Android Keystore ผ่าน Secure Storage และใช้ Release signing key เดิมจากไฟล์นอก Git
+- เพิ่ม Swift bridge, Apple PushToTalk lifecycle และเสียง PCM สำหรับ iOS โดยคง UI ร่วมไว้ใน Flutter
+- เพิ่ม APNs provider แบบเปิดใช้ภายหลังใน Docker Server; เมื่อ `APNS_ENABLED=false` จะไม่เปลี่ยนพฤติกรรม Android เดิม
+- แยก Docker image ใหม่เป็น `ptt-relay:1.3.0-flutter` เพื่อไม่เขียนทับ image `1.2.3-docker`
+
+### การตรวจสอบรอบพัฒนา
+
+- `flutter analyze`: ผ่าน ไม่พบปัญหา
+- `flutter test`: ผ่านทั้งหมด
+- Android native Kotlin Compile: ผ่าน
+- Flutter Release APK: สร้างและลงนามสำเร็จ (`PTT-Flutter-1.3.0-release.apk`, versionCode 12) และตรวจสอบ APK Signature Scheme v2 ผ่าน
+- `npm test`: ผ่าน (`SECURITY_TESTS_OK`) รวม Authentication, สิทธิ์ All และ APNs token registration
+- iOS ยังต้อง Build/Sign บน macOS ด้วย Xcode และทดสอบบน iPhone จริงก่อนนำไปใช้จริง
+- APNs ยังต้องใส่ Apple Team ID, Key ID, Bundle ID และไฟล์ `.p8` จริงก่อนทดสอบการปลุกแอปเบื้องหลัง
+
 ## 1.2.3-docker — 2026-08-29
 
 - แก้ Gradle validation ที่เกิดจากงานคัดลอก APK เขียนไฟล์กลับเข้าโฟลเดอร์ผลลัพธ์เดิม โดยคัดลอกหลังงาน Assemble เสร็จโดยตรง
