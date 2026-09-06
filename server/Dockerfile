@@ -7,10 +7,11 @@ RUN npm ci --omit=dev && npm cache clean --force
 FROM node:24-alpine
 
 LABEL org.opencontainers.image.title="PTT Relay Server" \
-      org.opencontainers.image.version="1.3.1-test"
+      org.opencontainers.image.version="1.4.0-northflank"
 
 ENV NODE_ENV=production \
-    PORT=8181
+    PORT=8181 \
+    PTT_VERSION=1.4.0-northflank
 
 WORKDIR /app
 COPY --from=dependencies --chown=node:node /app/node_modules ./node_modules

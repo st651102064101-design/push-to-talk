@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0-northflank — กำลังนำขึ้น Cloud — 2026-09-06
+
+- เตรียม Docker Server สำหรับ Northflank โดยคง WebSocket protocol และพอร์ตภายใน 8181
+- เพิ่ม `PTT_TRUST_PROXY` เพื่ออ่าน IP ผู้ใช้งานผ่าน Northflank reverse proxy และไม่จำกัดทุกเครื่องรวมเป็น IP เดียว
+- เพิ่ม `/healthz` สำหรับตรวจสุขภาพ Container โดยไม่เปิดเผย Dashboard
+- เปิด Authentication เป็นค่าเริ่มต้น และกำหนดให้ Dashboard บนอินเทอร์เน็ตต้องใช้ Username/Password
+- แสดง Server version `1.4.0-northflank` บน Dashboard และผลตรวจสุขภาพ
+- Repository สำหรับ Deploy ต้องมีเฉพาะไฟล์ใน `server`; ห้ามนำ `.env`, Token, Password หรือ APNs key ขึ้น GitHub
+
 ## 1.3.1-test — กำลังทดสอบ — 2026-09-05
 
 - ปิดการตรวจ Access Token ชั่วคราวด้วย `PTT_AUTH_REQUIRED=false`; Dashboard ยังคงบังคับ Username/Password

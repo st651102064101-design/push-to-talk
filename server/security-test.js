@@ -17,6 +17,7 @@ const relay = spawn(process.execPath, ["index.js"], {
     PTT_ADMIN_TOKEN: adminToken,
     PTT_DASHBOARD_USER: dashboardUser,
     PTT_DASHBOARD_PASSWORD: dashboardPassword,
+    PTT_TRUST_PROXY: "true",
     APNS_ENABLED: "false"
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -49,6 +50,10 @@ const connect = (token, targetPort = port) => {
 try {
   await waitForServer(port);
 
+  const health = await fetch(`http://127.0.0.1:${port}/healthz`);
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).version, "1.4.0-northflank");
+
   const unauthenticatedDashboard = await fetch(`http://127.0.0.1:${port}/status`);
   assert.equal(unauthenticatedDashboard.status, 401);
   const basic = Buffer.from(`${dashboardUser}:${dashboardPassword}`).toString("base64");
@@ -79,6 +84,19 @@ try {
   const joined = await admin.next("joined");
   assert.equal(joined.room, "all");
   assert.equal(joined.role, "admin");
+
+  const proxied = new WebSocket(`ws://127.0.0.1:${port}`, {
+    headers: { Authorization: `Bearer ${userToken}`, "X-Forwarded-For": "203.0.113.9" }
+  });
+  const proxiedMessages = [];
+  proxied.on("message", raw => proxiedMessages.push(JSON.parse(raw)));
+  for (let attempt = 0; attempt < 100 && !proxiedMessages.some(message => message.type === "authenticated"); attempt += 1) await delay(20);
+  proxied.send(JSON.stringify({ type: "join", room: "room-2", name: "Proxy test" }));
+  for (let attempt = 0; attempt < 100 && !proxiedMessages.some(message => message.type === "joined"); attempt += 1) await delay(20);
+  const proxiedDashboard = await fetch(`http://127.0.0.1:${port}/status`, { headers: { Authorization: `Basic ${basic}` } });
+  const proxiedStatus = await proxiedDashboard.json();
+  assert.equal(proxiedStatus.rooms.find(room => room.id === "room-2")?.peers[0]?.ip, "203.0.113.9");
+  proxied.close();
 
   anonymousRelay = spawn(process.execPath, ["index.js"], {
     cwd: import.meta.dirname,
