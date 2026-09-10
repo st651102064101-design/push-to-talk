@@ -9,7 +9,7 @@ void main() {
     expect(controller.roomId, 'room-1');
     expect(controller.channelMessage, 'ยังไม่เชื่อมต่อ');
     expect(PttController.accessTokenEnabled, isTrue);
-    expect(controller.endpoint, 'wss://pttrelay-vwzw2gr4.b4a.run');
+    expect(controller.endpoint, 'wss://ptt-relay-ixpl.onrender.com');
 
     controller.dispose();
   });

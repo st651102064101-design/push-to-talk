@@ -17,10 +17,13 @@ class PttController extends ChangeNotifier {
   static const _roomKey = 'room';
   static const _tokenKey = 'access_token';
   static const accessTokenEnabled = true;
-  static const defaultEndpoint = 'wss://pttrelay-vwzw2gr4.b4a.run';
+  static const defaultEndpoint = 'wss://ptt-relay-ixpl.onrender.com';
   static const _legacyTailscaleEndpoint = 'ws://100.112.185.32:8181';
-  static const _expiredBack4AppEndpoint =
-      'wss://pttrelay-khsyb3go.b4a.run';
+  static const _back4AppEndpointsToMigrate = {
+    'wss://pttrelay-khsyb3go.b4a.run',
+    'wss://pttrelay-vwzw2gr4.b4a.run',
+    'wss://pttrelay-1fhw3suo.b4a.run',
+  };
 
   final PttPlatform _platform;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
@@ -67,7 +70,7 @@ class PttController extends ChangeNotifier {
     final savedEndpoint = preferences.getString(_endpointKey);
     if (savedEndpoint == null ||
         savedEndpoint == _legacyTailscaleEndpoint ||
-        savedEndpoint == _expiredBack4AppEndpoint) {
+        _back4AppEndpointsToMigrate.contains(savedEndpoint)) {
       endpoint = defaultEndpoint;
       await preferences.setString(_endpointKey, endpoint);
     } else {

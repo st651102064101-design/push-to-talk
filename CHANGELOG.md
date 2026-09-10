@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.2-flutter — Render Free — 2026-09-10
+
+- เปลี่ยน Server เริ่มต้นของ Flutter เป็น `wss://ptt-relay-ixpl.onrender.com`
+- ย้ายค่าที่บันทึกเป็น URL เก่าของ Back4App หรือ Tailscale ไปยัง Render อัตโนมัติเมื่ออัปเดตแอป
+- เพิ่ม Flutter เป็นเวอร์ชัน `1.4.2` และ Android versionCode เป็น 16
+- สร้าง Web Service `ptt-relay` บน Render Free ภูมิภาค Singapore จาก GitHub และตรวจสถานะเป็น Live แล้ว
+- คง Access Token และ Dashboard credentials เดิมไว้ในตัวแปรลับของ Render โดยไม่บันทึกลง Git
+- `flutter analyze` และ `flutter test` ผ่านทั้งหมด
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.2-release.apk` (SHA-256: `3E354B74F1103EF974B3B35BC4992F7040ABF86F55A0C2A5FB3E9D870EBB2C2E`)
+- ยืนยัน APK เป็น versionName `1.4.2`, versionCode 16, applicationId `com.example.ptt_flutter` และ APK Signature Scheme v2 ผ่าน
+
 ## 1.4.1-flutter — Back4App URL refresh — 2026-09-10
 
 - เปลี่ยน Server เริ่มต้นเป็น `wss://pttrelay-vwzw2gr4.b4a.run` หลัง URL ฟรีเดิมของ Back4App หมดอายุ
