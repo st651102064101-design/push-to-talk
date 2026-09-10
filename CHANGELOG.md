@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.4-flutter — Hold-to-talk tap fix — 2026-09-10
+
+- เปลี่ยนปุ่ม Push-to-Talk ให้เริ่มพูดเมื่อกดค้างอย่างน้อย 300 มิลลิวินาที
+- แตะสั้นแล้วปล่อยจะไม่ส่งคำขอพูดและจะไม่แสดงสถานะ “ปล่อยเพื่อหยุดพูด”
+- ยังคงหยุดพูดทันทีเมื่อยกนิ้วออกหลังเริ่มพูดแล้ว
+- เพิ่มเวอร์ชัน Flutter เป็น `1.4.4` และ Android versionCode เป็น 18
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.4-release.apk` (SHA-256: `8E7D91BBC1EC07DEC1F9B7AEF9149FDE35D0F6A20340CC142BDB8F7A530C43B9`)
+
 ## 1.4.3-flutter — Render heartbeat and reconnect — 2026-09-10
 
 - เพิ่มข้อความ WebSocket heartbeat จาก Android ทุก 25 วินาที เพื่อให้ Render Free เห็น inbound traffic ระหว่างมีการเชื่อมต่อ

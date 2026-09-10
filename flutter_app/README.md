@@ -1,6 +1,6 @@
 # PTT Flutter
 
-รุ่นทดลองข้ามแพลตฟอร์ม **1.4.3 (build 17)** ทำงานคู่กับ Kotlin `v1.2.3-docker` และเชื่อมต่อ Relay Server บน Render ผ่าน WSS
+รุ่นทดลองข้ามแพลตฟอร์ม **1.4.4 (build 18)** ทำงานคู่กับ Kotlin `v1.2.3-docker` และเชื่อมต่อ Relay Server บน Render ผ่าน WSS
 
 ## สถานะปัจจุบัน
 
@@ -17,8 +17,8 @@ flutter build apk --debug
 flutter build apk --release
 ```
 
-- Debug: `flutter_app/build/app/outputs/versioned-apk/debug/PTT-Flutter-1.4.3-debug.apk`
-- Release ที่เซ็นแล้ว: `flutter_app/build/app/outputs/versioned-apk/release/PTT-Flutter-1.4.3-release.apk`
+- Debug: `flutter_app/build/app/outputs/versioned-apk/debug/PTT-Flutter-1.4.4-debug.apk`
+- Release ที่เซ็นแล้ว: `flutter_app/build/app/outputs/versioned-apk/release/PTT-Flutter-1.4.4-release.apk`
 - รุ่น Flutter ใช้ Application ID `com.example.ptt_flutter` จึงติดตั้งคู่กับ Kotlin เดิมได้
 
 ## เตรียม iOS บน Mac

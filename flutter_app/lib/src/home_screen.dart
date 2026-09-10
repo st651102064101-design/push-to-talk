@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'ptt_controller.dart';
@@ -305,13 +307,52 @@ class HoldToTalkButton extends StatefulWidget {
 }
 
 class _HoldToTalkButtonState extends State<HoldToTalkButton> {
+  static const _holdThreshold = Duration(milliseconds: 300);
   bool _pointerDown = false;
+  bool _talkRequested = false;
+  bool _releaseSent = false;
+  Timer? _holdTimer;
+
+  void _press() {
+    if (_pointerDown) return;
+    _pointerDown = true;
+    _talkRequested = false;
+    _releaseSent = false;
+    _holdTimer?.cancel();
+    _holdTimer = Timer(_holdThreshold, _startTalk);
+    setState(() {});
+  }
+
+  Future<void> _startTalk() async {
+    _holdTimer = null;
+    if (!_pointerDown || !widget.controller.canTalk) return;
+    _talkRequested = true;
+    final request = widget.controller.beginTalk();
+    await request;
+    if (!_pointerDown && !_releaseSent) {
+      _releaseSent = true;
+      await widget.controller.endTalk();
+    }
+    if (mounted) setState(() {});
+  }
 
   Future<void> _release() async {
     if (!_pointerDown) return;
     _pointerDown = false;
-    await widget.controller.endTalk();
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    if (_talkRequested && !_releaseSent) {
+      _releaseSent = true;
+      await widget.controller.endTalk();
+    }
+    _talkRequested = false;
     if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -334,12 +375,7 @@ class _HoldToTalkButtonState extends State<HoldToTalkButton> {
       opacity: enabled ? 1 : .58,
       child: Listener(
         onPointerDown: enabled
-            ? (_) {
-                if (_pointerDown) return;
-                _pointerDown = true;
-                widget.controller.beginTalk();
-                setState(() {});
-              }
+            ? (_) => _press()
             : null,
         onPointerUp: (_) => _release(),
         onPointerCancel: (_) => _release(),
