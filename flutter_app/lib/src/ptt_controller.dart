@@ -18,6 +18,9 @@ class PttController extends ChangeNotifier {
   static const _tokenKey = 'access_token';
   static const accessTokenEnabled = true;
   static const defaultEndpoint = 'wss://ptt-relay-ixpl.onrender.com';
+  // Set at release time with --dart-define=PTT_USER_TOKEN=<token>.
+  // The token is intentionally not committed to source control.
+  static const bundledToken = String.fromEnvironment('PTT_USER_TOKEN');
   static const _legacyTailscaleEndpoint = 'ws://100.112.185.32:8181';
   static const _back4AppEndpointsToMigrate = {
     'wss://pttrelay-khsyb3go.b4a.run',
@@ -79,7 +82,11 @@ class PttController extends ChangeNotifier {
     displayName = preferences.getString(_nameKey) ?? displayName;
     selectedRoom = (preferences.getInt(_roomKey) ?? 1).clamp(1, 5).toInt();
     if (accessTokenEnabled) {
-      token = await _secureStorage.read(key: _tokenKey) ?? '';
+      final savedToken = await _secureStorage.read(key: _tokenKey);
+      token = bundledToken.isNotEmpty ? bundledToken : (savedToken ?? '');
+      if (bundledToken.isNotEmpty && savedToken != bundledToken) {
+        await _secureStorage.write(key: _tokenKey, value: bundledToken);
+      }
     } else {
       token = '';
       await _secureStorage.delete(key: _tokenKey);
