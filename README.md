@@ -2,9 +2,9 @@
 
 รุ่นใช้งานจริงปัจจุบัน: **1.2.3-docker** (Kotlin, Android versionCode: 11)
 
-รุ่นทดลองข้ามแพลตฟอร์ม: **1.3.1-test** (Flutter 1.3.1, build 13) อยู่ในโฟลเดอร์ `flutter_app` และใช้ Server/protocol เดิม รุ่น Kotlin `v1.2.3-docker` และ Flutter `v1.3.0-flutter-alpha.1` ยังเก็บไว้และไม่ได้ถูกเขียนทับ
+รุ่นทดลองข้ามแพลตฟอร์ม: **1.4.1** (Flutter, build 15) อยู่ในโฟลเดอร์ `flutter_app` และใช้ Server เริ่มต้น `wss://pttrelay-vwzw2gr4.b4a.run` รุ่น Kotlin `v1.2.3-docker` และ Flutter รุ่นก่อนหน้ายังเก็บไว้และไม่ได้ถูกเขียนทับ
 
-Docker Server สำหรับ Cloud: **1.4.0-northflank** เตรียมสำหรับ HTTPS/WSS ผ่าน Northflank โดยเปิด Authentication เป็นค่าเริ่มต้น รายละเอียดการ Deploy อยู่ที่ [server/README.md](server/README.md)
+Docker Server สำหรับ Cloud: **1.4.0-northflank** ทำงานบน Back4App ผ่าน HTTPS/WSS โดยเปิด Authentication เป็นค่าเริ่มต้น รายละเอียดการ Deploy อยู่ที่ [server/README.md](server/README.md)
 
 แอปจะแสดงเลขเวอร์ชันและ versionCode ในเมนูตั้งค่าจากข้อมูลของ APK โดยตรง เมื่อ Build ด้วย Gradle ระบบจะสร้างสำเนา APK ที่มีเลขเวอร์ชันในชื่อไฟล์ให้อัตโนมัติ เช่น `PTT-1.2.3-docker-debug.apk` หรือ `PTT-1.2.3-docker-release.apk`
 
@@ -72,8 +72,7 @@ docker compose down
 
 ## Authentication และสิทธิ์
 
-- รุ่น `1.3.1-test` ตั้ง `PTT_AUTH_REQUIRED=false` ชั่วคราว จึงไม่ต้องกรอก Access Token และทุกอุปกรณ์สามารถใช้ `All` ได้ ใช้เฉพาะใน Tailnet ที่เชื่อถือได้เท่านั้น
-- ก่อนใช้งานจริงต้องตั้ง `PTT_AUTH_REQUIRED=true`, Build Server ใหม่ และเปิดช่อง Access Token ในแอปอีกครั้ง
+- รุ่น Flutter `1.4.1` เปิดช่อง Access Token และเชื่อมต่อ Back4App ผ่าน `wss://` เป็นค่าเริ่มต้น
 - `PTT_USER_TOKEN`: ใช้กับอุปกรณ์ทั่วไป เข้าได้เฉพาะห้อง 1–4
 - `PTT_ADMIN_TOKEN`: ใช้เฉพาะผู้ดูแล เข้าได้ทั้งห้อง 1–4 และ `All`
 - กรอก Token ที่เมนูตั้งค่าของ Android App; Token ถูกเข้ารหัสด้วย Android Keystore

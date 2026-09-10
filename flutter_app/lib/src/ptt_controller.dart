@@ -16,7 +16,11 @@ class PttController extends ChangeNotifier {
   static const _nameKey = 'display_name';
   static const _roomKey = 'room';
   static const _tokenKey = 'access_token';
-  static const accessTokenEnabled = false;
+  static const accessTokenEnabled = true;
+  static const defaultEndpoint = 'wss://pttrelay-vwzw2gr4.b4a.run';
+  static const _legacyTailscaleEndpoint = 'ws://100.112.185.32:8181';
+  static const _expiredBack4AppEndpoint =
+      'wss://pttrelay-khsyb3go.b4a.run';
 
   final PttPlatform _platform;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
@@ -24,7 +28,7 @@ class PttController extends ChangeNotifier {
   );
   StreamSubscription<Map<String, dynamic>>? _statusSubscription;
 
-  String endpoint = 'ws://100.112.185.32:8181';
+  String endpoint = defaultEndpoint;
   String displayName = Platform.isIOS ? 'iPhone' : 'Android';
   String token = '';
   int selectedRoom = 1;
@@ -60,7 +64,15 @@ class PttController extends ChangeNotifier {
 
   Future<void> initialize() async {
     final preferences = await SharedPreferences.getInstance();
-    endpoint = preferences.getString(_endpointKey) ?? endpoint;
+    final savedEndpoint = preferences.getString(_endpointKey);
+    if (savedEndpoint == null ||
+        savedEndpoint == _legacyTailscaleEndpoint ||
+        savedEndpoint == _expiredBack4AppEndpoint) {
+      endpoint = defaultEndpoint;
+      await preferences.setString(_endpointKey, endpoint);
+    } else {
+      endpoint = savedEndpoint;
+    }
     displayName = preferences.getString(_nameKey) ?? displayName;
     selectedRoom = (preferences.getInt(_roomKey) ?? 1).clamp(1, 5).toInt();
     if (accessTokenEnabled) {

@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.1-flutter — Back4App URL refresh — 2026-09-10
+
+- เปลี่ยน Server เริ่มต้นเป็น `wss://pttrelay-vwzw2gr4.b4a.run` หลัง URL ฟรีเดิมของ Back4App หมดอายุ
+- ย้ายค่าที่บันทึกเป็น Back4App URL เดิมไปยัง URL ปัจจุบันอัตโนมัติเมื่ออัปเดตแอป
+- เพิ่ม Flutter เป็นเวอร์ชัน `1.4.1` และ Android versionCode เป็น 15
+- ตรวจ Runtime Logs ของ Back4App แล้วไม่พบคำขอจาก Android ไปถึง Server ก่อนแก้ URL
+- `flutter analyze` และ `flutter test` ผ่านทั้งหมด
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.1-release.apk`
+- ยืนยัน APK เป็น versionName `1.4.1`, versionCode 15, applicationId `com.example.ptt_flutter` และลายเซ็น APK Signature Scheme v2 ผ่าน
+
+## 1.4.0-flutter — Back4App — 2026-09-09
+
+- เปลี่ยน Server เริ่มต้นของ Flutter เป็น `wss://pttrelay-khsyb3go.b4a.run`
+- ย้ายค่าที่เคยบันทึกเป็น Tailscale URL เดิมไปยัง Back4App อัตโนมัติเมื่ออัปเดตแอป
+- เปิดช่อง Access Token อีกครั้งให้ตรงกับ Server บน Back4App ที่บังคับ Authentication
+- เพิ่ม Flutter เป็นเวอร์ชัน `1.4.0` และ Android versionCode เป็น 14
+- ไม่ฝัง Access Token ลงใน APK ผู้ใช้ต้องกรอก `PTT_USER_TOKEN` หรือ `PTT_ADMIN_TOKEN` ในเมนูตั้งค่า
+
+### การตรวจสอบรอบ Build
+
+- `flutter analyze`: ผ่าน ไม่พบปัญหา
+- `flutter test`: ผ่านทั้งหมด
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.0-release.apk`
+- ยืนยัน APK เป็น versionName `1.4.0`, versionCode 14 และ applicationId `com.example.ptt_flutter`
+- ตรวจลายเซ็น APK Signature Scheme v2 ผ่าน และยืนยันว่า URL ของ Back4App อยู่ภายใน APK
+
 ## 1.4.0-northflank — กำลังนำขึ้น Cloud — 2026-09-06
 
 - เตรียม Docker Server สำหรับ Northflank โดยคง WebSocket protocol และพอร์ตภายใน 8181
