@@ -59,6 +59,40 @@ try {
   const basic = Buffer.from(`${dashboardUser}:${dashboardPassword}`).toString("base64");
   const authenticatedDashboard = await fetch(`http://127.0.0.1:${port}/status`, { headers: { Authorization: `Basic ${basic}` } });
   assert.equal(authenticatedDashboard.status, 200);
+  const dashboardPage = await fetch(`http://127.0.0.1:${port}/`, { headers: { Authorization: `Basic ${basic}` } });
+  assert.equal(dashboardPage.status, 200);
+  assert.match(await dashboardPage.text(), /จัดการอุปกรณ์/);
+  const initialStatus = await authenticatedDashboard.clone().json();
+  assert.equal(initialStatus.config.maxConnections, 100);
+  assert.equal(initialStatus.config.maxConnectionsPerIp, 5);
+  const missingActionHeader = await fetch(`http://127.0.0.1:${port}/admin/config`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json" },
+    body: JSON.stringify({})
+  });
+  assert.equal(missingActionHeader.status, 400);
+  const configResponse = await fetch(`http://127.0.0.1:${port}/admin/config`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json", "X-PTT-Dashboard": "1" },
+    body: JSON.stringify({
+      heartbeatIntervalMs: 5_000,
+      maxConnections: 120,
+      maxConnectionsPerIp: 6,
+      rooms: [
+        { id: "room-1", name: "ห้องทดสอบ", enabled: true },
+        { id: "room-2", name: "room-2", enabled: true },
+        { id: "room-3", name: "room-3", enabled: true },
+        { id: "room-4", name: "room-4", enabled: false },
+        { id: "all", name: "all", enabled: true }
+      ]
+    })
+  });
+  assert.equal(configResponse.status, 200);
+  const configuredStatus = await configResponse.json();
+  assert.equal(configuredStatus.config.heartbeatIntervalMs, 5_000);
+  assert.equal(configuredStatus.config.maxConnections, 120);
+  assert.equal(configuredStatus.rooms.find(room => room.id === "room-1").name, "ห้องทดสอบ");
+  assert.equal(configuredStatus.rooms.find(room => room.id === "room-4").enabled, false);
 
   await new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}`);
@@ -93,6 +127,21 @@ try {
   const joined = await admin.next("joined");
   assert.equal(joined.room, "all");
   assert.equal(joined.role, "admin");
+
+  const statusBeforeDisconnect = await fetch(`http://127.0.0.1:${port}/status`, { headers: { Authorization: `Basic ${basic}` } }).then(response => response.json());
+  const userPeer = statusBeforeDisconnect.rooms.find(room => room.id === "room-1")?.peers.find(peer => peer.name === "User");
+  assert.ok(userPeer?.id);
+  const userDisconnected = new Promise(resolve => userReconnected.ws.once("close", (_code, reason) => resolve(String(reason))));
+  const disconnectResponse = await fetch(`http://127.0.0.1:${port}/admin/disconnect`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json", "X-PTT-Dashboard": "1" },
+    body: JSON.stringify({ peerId: userPeer.id })
+  });
+  assert.equal(disconnectResponse.status, 200);
+  assert.match(await userDisconnected, /dashboard/);
+  const statusAfterDisconnect = await disconnectResponse.clone().json();
+  assert.equal(statusAfterDisconnect.status.rooms.find(room => room.id === "room-1")?.peers.length, 0);
+  assert.equal(statusAfterDisconnect.status.config.audit[0].action, "ตัดการเชื่อมต่อ");
 
   const proxied = new WebSocket(`ws://127.0.0.1:${port}`, {
     headers: { Authorization: `Bearer ${userToken}`, "X-Forwarded-For": "203.0.113.9" }

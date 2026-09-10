@@ -27,3 +27,14 @@ APNS_ENABLED=false
 ```
 
 The public client endpoint will be `wss://<northflank-domain>` and the Dashboard will be `https://<northflank-domain>/`.
+
+## Dashboard management
+
+After signing in with `PTT_DASHBOARD_USER` and `PTT_DASHBOARD_PASSWORD`, the Dashboard can:
+
+- search connected devices and refresh their status;
+- disconnect a stale device (the current Android source shows that an administrator disconnected it and will not immediately reconnect; rebuild/install the updated APK to receive this behavior);
+- change the heartbeat interval, connection limits, per-IP limit, and room display names/enabled state;
+- view a short in-memory audit history.
+
+These settings are runtime settings and return to their defaults after a server restart or redeploy. Access tokens, Dashboard credentials, and other secrets are never shown or edited in the web page; keep them in Render environment variables. The Dashboard remains protected by Basic Authentication, and remote access requires `PTT_DASHBOARD_ALLOW_REMOTE=true`.

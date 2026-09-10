@@ -12,8 +12,16 @@ const dashboardUser = String(process.env.PTT_DASHBOARD_USER || "").trim();
 const dashboardPassword = String(process.env.PTT_DASHBOARD_PASSWORD || "").trim();
 const allowRemoteDashboard = String(process.env.PTT_DASHBOARD_ALLOW_REMOTE || "").trim().toLowerCase() === "true";
 const trustProxy = String(process.env.PTT_TRUST_PROXY || "").trim().toLowerCase() === "true";
-const heartbeatIntervalMs = 30_000;
 const socketReplacedCode = 4001;
+const dashboardDisconnectedCode = 4002;
+const defaultHeartbeatIntervalMs = 30_000;
+const defaultMaxConnections = 100;
+const defaultMaxConnectionsPerIp = 5;
+const runtimeConfig = {
+  heartbeatIntervalMs: defaultHeartbeatIntervalMs,
+  maxConnections: defaultMaxConnections,
+  maxConnectionsPerIp: defaultMaxConnectionsPerIp
+};
 let apns;
 try { apns = createApnsNotifier(); } catch (error) {
   console.error("APNs configuration error:", error.message);
@@ -62,10 +70,128 @@ const isLoopback = request => {
 const rooms = new Map();
 const pushRegistrations = new Map();
 let allFloor = null;
-const allowedRooms = new Set(["room-1", "room-2", "room-3", "room-4", "all"]);
+const roomSettings = new Map([
+  ["room-1", { name: "room-1", enabled: true }],
+  ["room-2", { name: "room-2", enabled: true }],
+  ["room-3", { name: "room-3", enabled: true }],
+  ["room-4", { name: "room-4", enabled: true }],
+  ["all", { name: "all", enabled: true }]
+]);
 const normalizeClientId = value => String(value || "").trim().slice(0, 80);
-const dashboard = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PTT status</title><style>body{font-family:system-ui,sans-serif;background:#f6f8fb;color:#182230;max-width:760px;margin:40px auto;padding:0 20px}h1{margin-bottom:4px}.muted{color:#617083}.card{background:#fff;border:1px solid #dce2ea;border-radius:12px;margin:16px 0;padding:16px;box-shadow:0 2px 8px #00000008}ul{padding-left:0;list-style:none}.peer{padding:12px 0;border-top:1px solid #edf0f4}.peer:first-child{border-top:0}.details{color:#617083;font-size:.9rem;line-height:1.55}.state{display:inline-block;margin-left:10px;padding:3px 9px;border-radius:999px;font-size:.75rem;font-weight:700}.speaking{background:#fee4e2;color:#b42318}.ready{background:#dcfae6;color:#067647}.empty{padding:24px;text-align:center}</style></head><body><h1>PTT ออนไลน์</h1><p class="muted" id="updated">กำลังโหลด…</p><main id="rooms"></main><script>const target=document.querySelector('#rooms'),updated=document.querySelector('#updated');function draw(data){updated.textContent='เวอร์ชัน '+data.version+' · อัปเดตล่าสุด: '+new Date().toLocaleTimeString()+' · ออนไลน์ '+data.totalPeers+' เครื่อง';target.replaceChildren();if(!data.rooms.length){target.innerHTML='<section class="card empty">ยังไม่มีผู้ใช้เข้าห้อง</section>';return}for(const room of data.rooms){const card=document.createElement('section');card.className='card';const h=document.createElement('h2');h.textContent='ห้อง: '+room.id;card.append(h);const list=document.createElement('ul');for(const peer of room.peers){const item=document.createElement('li');item.className='peer';const title=document.createElement('strong');title.textContent=peer.name;const state=document.createElement('span');state.className='state '+(peer.speaking?'speaking':'ready');state.textContent=peer.speaking?'กำลังพูด':'พร้อม';const details=document.createElement('div');details.className='details';details.textContent='อุปกรณ์: '+(peer.device||'ไม่ทราบ')+' · IP: '+peer.ip+' · เชื่อมต่อ: '+peer.connectedMinutes+' นาที · กดพูด: '+peer.talkCount+' ครั้ง';item.append(title,state,details);list.append(item)}card.append(list);target.append(card)}}async function refresh(){try{draw(await fetch('/status',{cache:'no-store'}).then(r=>r.json()))}catch{updated.textContent='ไม่สามารถเชื่อมต่อ server ได้'}}refresh();setInterval(refresh,250)</script></body></html>`;
-const server = http.createServer((req, res) => {
+const auditLog = [];
+const recordAudit = (action, details) => {
+  auditLog.unshift({ at: new Date().toISOString(), action, details: String(details || "").slice(0, 240) });
+  if (auditLog.length > 50) auditLog.length = 50;
+};
+const getRoomConfig = () => [...roomSettings.entries()].map(([id, settings]) => ({ id, name: settings.name, enabled: settings.enabled }));
+const getStatus = () => {
+  const activeRooms = new Map([...rooms.entries()].map(([id, room]) => [id, room]));
+  const items = [...roomSettings.entries()].map(([id, settings]) => {
+    const room = activeRooms.get(id);
+    return {
+      id,
+      name: settings.name,
+      enabled: settings.enabled,
+      peers: room ? [...room.peers].map(peer => ({
+        id: peer.id,
+        name: peer.name,
+        device: peer.device,
+        ip: peer.ip,
+        connectedMinutes: Math.floor((Date.now() - peer.connectedAt) / 60000),
+        talkCount: peer.talkCount,
+        speaking: room.floor === peer
+      })) : []
+    };
+  });
+  const totalPeers = items.reduce((total, room) => total + room.peers.length, 0);
+  return {
+    version: serverVersion,
+    totalPeers,
+    rooms: items,
+    config: {
+      heartbeatIntervalMs: runtimeConfig.heartbeatIntervalMs,
+      maxConnections: runtimeConfig.maxConnections,
+      maxConnectionsPerIp: runtimeConfig.maxConnectionsPerIp,
+      authRequired,
+      audit: auditLog.slice(0, 20),
+      rooms: getRoomConfig()
+    }
+  };
+};
+const dashboard = `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PTT Dashboard</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#182230;background:#f6f8fb}
+    body{max-width:960px;margin:32px auto;padding:0 18px}
+    h1{margin:0 0 4px;font-size:2rem}h2{margin:0 0 14px;font-size:1.25rem}
+    .muted{color:#617083}.card{background:#fff;border:1px solid #dce2ea;border-radius:12px;margin:16px 0;padding:18px;box-shadow:0 2px 8px #00000008}
+    .toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}.toolbar input{flex:1;min-width:220px}
+    input,button{font:inherit;border:1px solid #c5ced9;border-radius:7px;padding:9px 11px}button{background:#1677d2;color:#fff;border-color:#1677d2;cursor:pointer;font-weight:650}button.secondary{background:#fff;color:#182230}button.danger{background:#c62828;border-color:#c62828;padding:6px 10px;font-size:.84rem}button:disabled{opacity:.55;cursor:not-allowed}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.stat{background:#f4f7fb;border-radius:8px;padding:11px}.stat b{display:block;font-size:1.1rem;margin-top:3px}
+    .peer{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #edf0f4}.peer:first-child{border-top:0}.peer-main{flex:1;min-width:0}.peer-name{font-weight:700}.details{color:#617083;font-size:.9rem;line-height:1.5}.state{display:inline-block;margin-left:8px;padding:3px 9px;border-radius:999px;font-size:.75rem;font-weight:700}.speaking{background:#fee4e2;color:#b42318}.ready{background:#dcfae6;color:#067647}.empty{padding:24px;text-align:center;color:#617083}.room-disabled{opacity:.65}.config-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}.config-row label{display:flex;flex-direction:column;gap:5px;font-size:.9rem;color:#617083}.config-row input{color:#182230}.room-config{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 0}.room-config input[type=text]{min-width:0}.notice{margin:10px 0;padding:9px 11px;border-radius:7px;background:#edf7ff;color:#17527c}.error{background:#fff0f0;color:#a52222}.audit{padding-left:20px;margin:0}.audit li{margin:7px 0;color:#617083;font-size:.88rem}
+    @media(max-width:560px){.config-row{grid-template-columns:1fr}.peer{align-items:flex-start;flex-wrap:wrap}.peer button{margin-left:auto}}
+  </style>
+</head>
+<body>
+  <h1>PTT ออนไลน์</h1>
+  <p class="muted" id="updated">กำลังโหลด…</p>
+  <div id="notice" hidden></div>
+  <section class="card"><h2>ภาพรวมระบบ</h2><div id="stats" class="grid"></div></section>
+  <section class="card"><h2>จัดการอุปกรณ์</h2><div class="toolbar"><input id="search" type="search" placeholder="ค้นหาชื่อหรืออุปกรณ์"><button id="refresh" class="secondary">รีเฟรช</button></div><main id="rooms"></main></section>
+  <section class="card"><h2>ตั้งค่าการทำงาน</h2><p class="muted">ค่าต่อไปนี้มีผลทันทีและจะกลับค่าเริ่มต้นเมื่อรีสตาร์ตเซิร์ฟเวอร์ ค่าลับยังคงอยู่ในตัวแปรสภาพแวดล้อมของ Render</p><div class="config-row"><label>Heartbeat (วินาที)<input id="heartbeat" type="number" min="5" max="120" step="1"></label><label>จำนวนการเชื่อมต่อสูงสุด<input id="maxConnections" type="number" min="1" max="1000" step="1"></label><label>จำนวนต่อ IP สูงสุด<input id="maxConnectionsPerIp" type="number" min="1" max="100" step="1"></label></div><h3>ห้อง</h3><div id="roomConfig"></div><button id="saveConfig">บันทึกการตั้งค่า</button></section>
+  <section class="card"><h2>ประวัติการจัดการ</h2><ul id="audit" class="audit"></ul></section>
+  <script>
+    const roomsTarget=document.querySelector('#rooms'),updated=document.querySelector('#updated'),notice=document.querySelector('#notice'),search=document.querySelector('#search');
+    let latest=null;
+    function showNotice(message,error){notice.hidden=false;notice.textContent=message;notice.className=error?'notice error':'notice';setTimeout(()=>{notice.hidden=true},5000)}
+    function drawStats(data){const c=data.config;document.querySelector('#stats').innerHTML='<div class="stat">เวอร์ชัน<b>'+data.version+'</b></div><div class="stat">ออนไลน์<b>'+data.totalPeers+' เครื่อง</b></div><div class="stat">Heartbeat<b>'+(c.heartbeatIntervalMs/1000)+' วินาที</b></div><div class="stat">จำกัดการเชื่อมต่อ<b>'+c.maxConnections+' เครื่อง</b></div><div class="stat">ต่อ IP สูงสุด<b>'+c.maxConnectionsPerIp+' เครื่อง</b></div>'}
+    function drawRooms(data){const query=search.value.trim().toLowerCase();roomsTarget.replaceChildren();let shown=0;for(const room of data.rooms){const peers=room.peers.filter(peer=>(peer.name+' '+(peer.device||'')+' '+peer.ip).toLowerCase().includes(query));if(query&&!peers.length)continue;shown++;const card=document.createElement('section');card.className='card '+(!room.enabled?'room-disabled':'');const h=document.createElement('h3');h.textContent='ห้อง: '+room.name+' ('+room.id+')'+(!room.enabled?' · ปิดใช้งาน':'');card.append(h);if(!peers.length){const empty=document.createElement('div');empty.className='empty';empty.textContent=room.enabled?'ยังไม่มีผู้ใช้เข้าห้อง':'ห้องนี้ถูกปิดใช้งาน';card.append(empty)}else{for(const peer of peers){const item=document.createElement('div');item.className='peer';const main=document.createElement('div');main.className='peer-main';const title=document.createElement('div');title.className='peer-name';title.textContent=peer.name||'Guest';const state=document.createElement('span');state.className='state '+(peer.speaking?'speaking':'ready');state.textContent=peer.speaking?'กำลังพูด':'พร้อม';title.append(state);const details=document.createElement('div');details.className='details';details.textContent='อุปกรณ์: '+(peer.device||'ไม่ทราบ')+' · IP: '+peer.ip+' · เชื่อมต่อ: '+peer.connectedMinutes+' นาที · กดพูด: '+peer.talkCount+' ครั้ง';main.append(title,details);const button=document.createElement('button');button.className='danger';button.textContent='ตัดการเชื่อมต่อ';button.addEventListener('click',()=>disconnectPeer(peer.id,peer.name||'Guest'));item.append(main,button);card.append(item)}}roomsTarget.append(card)}if(!shown)roomsTarget.innerHTML='<div class="empty">ไม่พบอุปกรณ์ที่ค้นหา</div>'}
+    function drawConfig(data){const c=data.config;document.querySelector('#heartbeat').value=Math.round(c.heartbeatIntervalMs/1000);document.querySelector('#maxConnections').value=c.maxConnections;document.querySelector('#maxConnectionsPerIp').value=c.maxConnectionsPerIp;const target=document.querySelector('#roomConfig');target.replaceChildren();for(const room of c.rooms){const row=document.createElement('label');row.className='room-config';const enabled=document.createElement('input');enabled.type='checkbox';enabled.checked=room.enabled;enabled.dataset.roomId=room.id;const name=document.createElement('input');name.type='text';name.maxLength=40;name.value=room.name;name.dataset.roomId=room.id;const id=document.createElement('span');id.textContent=room.id;row.append(enabled,name,id);target.append(row)}}
+    function drawAudit(data){const target=document.querySelector('#audit');target.replaceChildren();if(!data.config.audit.length){target.innerHTML='<li>ยังไม่มีรายการ</li>';return}for(const item of data.config.audit){const li=document.createElement('li');li.textContent=new Date(item.at).toLocaleString()+' · '+item.action+' · '+item.details;target.append(li)}}
+    function draw(data){latest=data;drawStats(data);drawRooms(data);drawConfig(data);drawAudit(data);updated.textContent='อัปเดตล่าสุด: '+new Date().toLocaleTimeString()+' · ออนไลน์ '+data.totalPeers+' เครื่อง'}
+    async function refresh(){try{const response=await fetch('/status',{cache:'no-store'});if(!response.ok)throw new Error('โหลดสถานะไม่สำเร็จ');draw(await response.json())}catch(error){updated.textContent=error.message;showNotice('ไม่สามารถเชื่อมต่อ Dashboard ได้',true)}}
+    async function disconnectPeer(peerId,name){if(!confirm('ตัดการเชื่อมต่อ '+name+' ใช่หรือไม่?'))return;try{const response=await fetch('/admin/disconnect',{method:'POST',headers:{'Content-Type':'application/json','X-PTT-Dashboard':'1'},body:JSON.stringify({peerId})});const result=await response.json();if(!response.ok)throw new Error(result.message||'ตัดการเชื่อมต่อไม่สำเร็จ');showNotice('ตัดการเชื่อมต่อ '+name+' แล้ว');refresh()}catch(error){showNotice(error.message,true)}}
+    async function saveConfig(){const rooms=[...document.querySelectorAll('#roomConfig .room-config')].map(row=>({id:row.querySelector('input[type=checkbox]').dataset.roomId,enabled:row.querySelector('input[type=checkbox]').checked,name:row.querySelector('input[type=text]').value}));const payload={heartbeatIntervalMs:Number(document.querySelector('#heartbeat').value)*1000,maxConnections:Number(document.querySelector('#maxConnections').value),maxConnectionsPerIp:Number(document.querySelector('#maxConnectionsPerIp').value),rooms};try{const response=await fetch('/admin/config',{method:'POST',headers:{'Content-Type':'application/json','X-PTT-Dashboard':'1'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.message||'บันทึกไม่สำเร็จ');showNotice('บันทึกการตั้งค่าแล้ว');draw(result);refresh()}catch(error){showNotice(error.message,true)}}
+    search.addEventListener('input',()=>{if(latest)drawRooms(latest)});document.querySelector('#refresh').addEventListener('click',refresh);document.querySelector('#saveConfig').addEventListener('click',saveConfig);refresh();setInterval(refresh,2000);
+  </script>
+</body>
+</html>`;
+const jsonResponse = (res, status, value) => {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+  return res.end(JSON.stringify(value));
+};
+const readJsonBody = (req, maxBytes = 16 * 1024) => new Promise((resolve, reject) => {
+  let size = 0;
+  const chunks = [];
+  req.on("data", chunk => {
+    size += chunk.length;
+    if (size > maxBytes) {
+      const error = new Error("Request body is too large");
+      error.code = "too_large";
+      reject(error);
+      req.destroy();
+      return;
+    }
+    chunks.push(chunk);
+  });
+  req.on("end", () => {
+    try {
+      const text = Buffer.concat(chunks).toString("utf8");
+      resolve(text ? JSON.parse(text) : {});
+    } catch {
+      const error = new Error("Invalid JSON body");
+      error.code = "invalid_json";
+      reject(error);
+    }
+  });
+  req.on("error", reject);
+});
+const server = http.createServer(async (req, res) => {
+  const pathname = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`).pathname;
   if (req.url === "/healthz") {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
     return res.end(JSON.stringify({ status: "ok", version: serverVersion }));
@@ -78,13 +204,58 @@ const server = http.createServer((req, res) => {
     res.writeHead(401, { "WWW-Authenticate": "Basic realm=\"PTT Dashboard\", charset=\"UTF-8\"", "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
     return res.end("Authentication required");
   }
-  if (req.url === "/status") {
-    const items = [...rooms.entries()].map(([id, room]) => ({ id, peers: [...room.peers].map(peer => ({ name: peer.name, device: peer.device, ip: peer.ip, connectedMinutes: Math.floor((Date.now() - peer.connectedAt) / 60000), talkCount: peer.talkCount, speaking: room.floor === peer })) }));
-    const totalPeers = items.reduce((total, room) => total + room.peers.length, 0);
-    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
-    return res.end(JSON.stringify({ version: serverVersion, totalPeers, rooms: items }));
+  if (pathname === "/status" && req.method === "GET") return jsonResponse(res, 200, getStatus());
+  if (pathname === "/admin/disconnect" && req.method === "POST") {
+    if (req.headers["x-ptt-dashboard"] !== "1") return jsonResponse(res, 400, { message: "Dashboard action header is required" });
+    try {
+      const body = await readJsonBody(req);
+      const peerId = String(body?.peerId || "").trim();
+      if (!peerId || peerId.length > 80) return jsonResponse(res, 400, { message: "ระบุอุปกรณ์ที่ต้องการตัดการเชื่อมต่อ" });
+      const peer = [...wss.clients].find(candidate => candidate.id === peerId);
+      if (!peer) return jsonResponse(res, 404, { message: "ไม่พบอุปกรณ์นี้ อาจตัดการเชื่อมต่อไปแล้ว" });
+      const description = `${peer.name || "Guest"} (${peer.device || "Unknown"})`;
+      leave(peer);
+      if (peer.readyState === WebSocket.OPEN || peer.readyState === WebSocket.CONNECTING) peer.close(dashboardDisconnectedCode, "disconnected by dashboard");
+      else peer.terminate();
+      recordAudit("ตัดการเชื่อมต่อ", description);
+      return jsonResponse(res, 200, { ok: true, status: getStatus() });
+    } catch (error) {
+      const status = error.code === "too_large" ? 413 : 400;
+      return jsonResponse(res, status, { message: error.code === "too_large" ? "ข้อมูลมีขนาดใหญ่เกินไป" : "ข้อมูลไม่ถูกต้อง" });
+    }
   }
-  if (req.url === "/" || req.url === "/index.html") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }); return res.end(dashboard); }
+  if (pathname === "/admin/config" && req.method === "POST") {
+    if (req.headers["x-ptt-dashboard"] !== "1") return jsonResponse(res, 400, { message: "Dashboard action header is required" });
+    try {
+      const body = await readJsonBody(req);
+      const heartbeat = Number(body?.heartbeatIntervalMs);
+      const maxConnections = Number(body?.maxConnections);
+      const maxConnectionsPerIp = Number(body?.maxConnectionsPerIp);
+      if (!Number.isInteger(heartbeat) || heartbeat < 5_000 || heartbeat > 120_000) throw new Error("Heartbeat must be between 5 and 120 seconds");
+      if (!Number.isInteger(maxConnections) || maxConnections < 1 || maxConnections > 1_000) throw new Error("Maximum connections is invalid");
+      if (!Number.isInteger(maxConnectionsPerIp) || maxConnectionsPerIp < 1 || maxConnectionsPerIp > 100) throw new Error("Maximum connections per IP is invalid");
+      if (!Array.isArray(body?.rooms) || body.rooms.length !== roomSettings.size) throw new Error("Room configuration is incomplete");
+      const nextRooms = new Map();
+      for (const item of body.rooms) {
+        const id = String(item?.id || "").trim();
+        if (!roomSettings.has(id) || nextRooms.has(id)) throw new Error("Room configuration is invalid");
+        const name = String(item?.name || "").trim().slice(0, 40);
+        if (!name) throw new Error("Room name cannot be empty");
+        nextRooms.set(id, { name, enabled: item.enabled !== false });
+      }
+      runtimeConfig.heartbeatIntervalMs = heartbeat;
+      runtimeConfig.maxConnections = maxConnections;
+      runtimeConfig.maxConnectionsPerIp = maxConnectionsPerIp;
+      for (const [id, settings] of nextRooms) roomSettings.set(id, settings);
+      restartHeartbeatTimer();
+      recordAudit("บันทึกการตั้งค่า", `heartbeat ${heartbeat / 1000}s · สูงสุด ${maxConnections} เครื่อง · ต่อ IP ${maxConnectionsPerIp} เครื่อง`);
+      return jsonResponse(res, 200, getStatus());
+    } catch (error) {
+      const status = error.code === "too_large" ? 413 : 400;
+      return jsonResponse(res, status, { message: error.code === "too_large" ? "ข้อมูลมีขนาดใหญ่เกินไป" : error.message || "การตั้งค่าไม่ถูกต้อง" });
+    }
+  }
+  if (pathname === "/" || pathname === "/index.html") { res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" }); return res.end(dashboard); }
   res.writeHead(404); res.end("Not found");
 });
 const wss = new WebSocketServer({
@@ -97,7 +268,7 @@ const wss = new WebSocketServer({
     if (!role) { console.warn(`Rejected unauthenticated WebSocket from ${ip}`); return done(false, 401, "Unauthorized"); }
     if (origin) { console.warn(`Rejected browser WebSocket origin ${origin} from ${ip}`); return done(false, 403, "Browser connections are not allowed"); }
     const connectionsFromIp = [...wss.clients].filter(peer => peer.ip === ip).length;
-    if (wss.clients.size >= 100 || connectionsFromIp >= 5) return done(false, 429, "Too many connections");
+    if (wss.clients.size >= runtimeConfig.maxConnections || connectionsFromIp >= runtimeConfig.maxConnectionsPerIp) return done(false, 429, "Too many connections");
     done(true);
   }
 });
@@ -181,7 +352,8 @@ wss.on("connection", (peer, request) => {
       }
     } else if (msg.type === "join") {
       const id = String(msg.room || "").trim().slice(0, 40);
-      if (!allowedRooms.has(id)) { peer.send(JSON.stringify({ type: "error", code: "invalid_room", message: "ไม่พบห้องที่ระบุ" })); return; }
+      const roomSettingsForId = roomSettings.get(id);
+      if (!roomSettingsForId || !roomSettingsForId.enabled) { peer.send(JSON.stringify({ type: "error", code: "invalid_room", message: "ไม่พบห้องที่ระบุหรือห้องถูกปิดใช้งาน" })); return; }
       if (id === "all" && peer.role !== "admin") { peer.send(JSON.stringify({ type: "error", code: "forbidden_all", message: "Token นี้ไม่มีสิทธิ์ใช้งาน All" })); return; }
       const clientId = normalizeClientId(msg.clientId);
       if (clientId) {
@@ -222,7 +394,10 @@ wss.on("connection", (peer, request) => {
   });
   peer.on("close", () => leave(peer));
 });
-const heartbeatTimer = setInterval(() => {
+let heartbeatTimer;
+const restartHeartbeatTimer = () => {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(() => {
   for (const peer of wss.clients) {
     if (peer.isAlive === false) {
       peer.terminate();
@@ -231,8 +406,10 @@ const heartbeatTimer = setInterval(() => {
     peer.isAlive = false;
     peer.ping();
   }
-}, heartbeatIntervalMs);
-heartbeatTimer.unref?.();
+  }, runtimeConfig.heartbeatIntervalMs);
+  heartbeatTimer.unref?.();
+};
+restartHeartbeatTimer();
 setInterval(() => { for (const room of rooms.values()) if (room.floor?.expires < Date.now()) release(room, room.floor); }, 1000);
 server.listen(port, () => {
   console.log("PTT relay and dashboard listening on port " + port);
