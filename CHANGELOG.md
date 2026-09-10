@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.5-flutter — Portrait orientation lock — 2026-09-10
+
+- ล็อกหน้าจอ Android ให้เป็นแนวตั้งเท่านั้น ไม่หมุนเป็นแนวนอนตามอุปกรณ์
+- ตั้งค่า Flutter ให้เริ่มแอปในแนวตั้งเสมอ
+- เพิ่มเวอร์ชัน Flutter เป็น `1.4.5` และ Android versionCode เป็น 19
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.5-release.apk` (SHA-256: `A102CD5C7459DA3B6D7FA1471E3FD3DC29E8CBDA88D3A210D81C7FDFA062A687`)
+
 ## 1.4.4-flutter — Hold-to-talk tap fix — 2026-09-10
 
 - เปลี่ยนปุ่ม Push-to-Talk ให้เริ่มพูดเมื่อกดค้างอย่างน้อย 300 มิลลิวินาที
