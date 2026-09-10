@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.6-flutter — Refresh duplicate sessions — 2026-09-10
+
+- เพิ่ม client session ID ที่เก็บใน Android เพื่อระบุแอปเดิมแม้เชื่อมต่อใหม่
+- เมื่อเชื่อมต่อใหม่ Server จะปิด session เก่าของแอปเดียวกันและ refresh รายชื่อออนไลน์ทันที
+- ป้องกันไม่ให้ session เก่าที่ถูกแทนที่ reconnect กลับมาเกิดรายการซ้ำ
+- เพิ่มเวอร์ชัน Flutter เป็น `1.4.6` และ Android versionCode เป็น 20
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.6-release.apk` (SHA-256: `D980CD54A46A64B25717428D2E162BEF6BCDBA1B95538995E01F76DB22C1A178`)
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.6-release.apk` (SHA-256: `D980CD54A46A64B25717428D2E162BEF6BCDBA1B95538995E01F76DB22C1A178`)
+
 ## 1.4.5-flutter — Portrait orientation lock — 2026-09-10
 
 - ล็อกหน้าจอ Android ให้เป็นแนวตั้งเท่านั้น ไม่หมุนเป็นแนวนอนตามอุปกรณ์

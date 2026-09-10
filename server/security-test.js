@@ -71,7 +71,7 @@ try {
   assert.equal((await user.next("authenticated")).role, "user");
   user.ws.send(JSON.stringify({ type: "join", room: "all", name: "User" }));
   assert.equal((await user.next("error")).code, "forbidden_all");
-  user.ws.send(JSON.stringify({ type: "join", room: "room-1", name: "User" }));
+  user.ws.send(JSON.stringify({ type: "join", room: "room-1", name: "User", clientId: "android-test" }));
   assert.equal((await user.next("joined")).room, "room-1");
   user.ws.send(JSON.stringify({ type: "heartbeat", ts: 123456789 }));
   assert.equal((await user.next("heartbeat")).ts, 123456789);
@@ -79,6 +79,13 @@ try {
   const pushRegistration = await user.next("push-registered");
   assert.equal(pushRegistration.registered, true);
   assert.equal(pushRegistration.enabled, false);
+
+  const userReconnected = connect(userToken);
+  const oldUserClosed = new Promise(resolve => user.ws.once("close", resolve));
+  assert.equal((await userReconnected.next("authenticated")).role, "user");
+  userReconnected.ws.send(JSON.stringify({ type: "join", room: "room-1", name: "User", clientId: "android-test" }));
+  assert.equal((await userReconnected.next("joined")).room, "room-1");
+  await oldUserClosed;
 
   const admin = connect(adminToken);
   assert.equal((await admin.next("authenticated")).role, "admin");
@@ -122,6 +129,7 @@ try {
   anonymous.ws.close();
 
   user.ws.close();
+  userReconnected.ws.close();
   admin.ws.close();
   console.log("SECURITY_TESTS_OK");
 } finally {

@@ -27,6 +27,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 
 class PttService : Service() {
     private val httpClient = OkHttpClient.Builder()
@@ -57,6 +58,12 @@ class PttService : Service() {
     private var connectionGeneration = 0
     private var requestedRoom = "room-1"
     private var requestedName = "Android"
+    private val clientId: String by lazy {
+        val preferences = getSharedPreferences("ptt_flutter", MODE_PRIVATE)
+        preferences.getString("client_id", null) ?: UUID.randomUUID().toString().also {
+            preferences.edit().putString("client_id", it).apply()
+        }
+    }
     private var shouldReconnect = false
     private var reconnectAttempt = 0
     private lateinit var audioManager: AudioManager
@@ -248,7 +255,11 @@ class PttService : Service() {
         }
 
         override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-            closeFromSocket("ตัดการเชื่อมต่อ", generation, true)
+            closeFromSocket(
+                if (code == SOCKET_REPLACED_CODE) "มีการเชื่อมต่อใหม่จากแอปนี้แล้ว" else "ตัดการเชื่อมต่อ",
+                generation,
+                code != SOCKET_REPLACED_CODE,
+            )
         }
     }
 
@@ -398,6 +409,7 @@ class PttService : Service() {
             .put("type", "join")
             .put("room", room)
             .put("name", name)
+            .put("clientId", clientId)
             .put("device", device)
             .toString()
     }
@@ -615,5 +627,6 @@ class PttService : Service() {
         private const val PCM = AudioFormat.ENCODING_PCM_16BIT
         private const val FRAME_BYTES = 640
         private const val HEARTBEAT_INTERVAL_SECONDS = 25L
+        private const val SOCKET_REPLACED_CODE = 4001
     }
 }
