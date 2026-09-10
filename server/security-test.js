@@ -73,6 +73,8 @@ try {
   assert.equal((await user.next("error")).code, "forbidden_all");
   user.ws.send(JSON.stringify({ type: "join", room: "room-1", name: "User" }));
   assert.equal((await user.next("joined")).room, "room-1");
+  user.ws.send(JSON.stringify({ type: "heartbeat", ts: 123456789 }));
+  assert.equal((await user.next("heartbeat")).ts, 123456789);
   user.ws.send(JSON.stringify({ type: "register-push", token: "f".repeat(64) }));
   const pushRegistration = await user.next("push-registered");
   assert.equal(pushRegistration.registered, true);

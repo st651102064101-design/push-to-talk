@@ -23,9 +23,21 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 class PttService : Service() {
+    private val httpClient = OkHttpClient.Builder()
+        .pingInterval(15, TimeUnit.SECONDS)
+        .build()
+    private val reconnectExecutor: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "ptt-reconnect").apply { isDaemon = true }
+        }
+    private var reconnectFuture: ScheduledFuture<*>? = null
+    private var heartbeatFuture: ScheduledFuture<*>? = null
     private var socket: WebSocket? = null
     private var recorder: AudioRecord? = null
     private var player: AudioTrack? = null
@@ -43,6 +55,10 @@ class PttService : Service() {
     private var activeAuthToken = ""
     private var activeEndpoint = ""
     private var connectionGeneration = 0
+    private var requestedRoom = "room-1"
+    private var requestedName = "Android"
+    private var shouldReconnect = false
+    private var reconnectAttempt = 0
     private lateinit var audioManager: AudioManager
     private var outputIndex = -1
     private var selectedOutput: AudioDeviceInfo? = null
@@ -58,7 +74,7 @@ class PttService : Service() {
             ACTION_SWITCH_ROOM -> switchRoom(intent)
             ACTION_REQUEST_STATE -> {
                 status(if (connected) "เชื่อมต่ออยู่" else "ยังไม่เชื่อมต่อ", connected)
-                if (socket == null) stopSelf()
+                if (socket == null && !shouldReconnect) stopSelf()
             }
             ACTION_TEST_SPEAKER -> testSpeaker()
             ACTION_REQUEST_TALK -> socket?.send("{\"type\":\"request-talk\"}")
@@ -94,34 +110,46 @@ class PttService : Service() {
         )
 
         if (!endpoint.startsWith("ws://") && !endpoint.startsWith("wss://")) {
+            shouldReconnect = false
             disconnect("URL ต้องขึ้นต้นด้วย ws:// หรือ wss://")
             return
         }
+        requestedRoom = room
+        requestedName = name
         if (socket != null && authToken == activeAuthToken && endpoint == activeEndpoint) {
             switchRoom(room, name)
             return
         }
 
+        cancelReconnect()
+        shouldReconnect = true
+        reconnectAttempt = 0
+        activeAuthToken = authToken
+        activeEndpoint = endpoint
+        activeRoom = room
+        selectFirstSpeaker()
+
+        openSocket()
+    }
+
+    private fun openSocket() {
+        if (!shouldReconnect || activeEndpoint.isBlank()) return
         connectionGeneration += 1
+        heartbeatFuture?.cancel(false)
+        heartbeatFuture = null
         socket?.cancel()
         socket = null
         connected = false
         isAdmin = false
-        activeRoom = room
-        activeAuthToken = authToken
-        activeEndpoint = endpoint
+        activeRoom = requestedRoom
         val generation = connectionGeneration
-        selectFirstSpeaker()
 
-        val requestBuilder = Request.Builder().url(endpoint)
-        if (authToken.isNotBlank()) {
-            requestBuilder.header("Authorization", "Bearer $authToken")
+        val requestBuilder = Request.Builder().url(activeEndpoint)
+        if (activeAuthToken.isNotBlank()) {
+            requestBuilder.header("Authorization", "Bearer $activeAuthToken")
         }
         val request = requestBuilder.build()
-        socket = OkHttpClient.Builder()
-            .pingInterval(15, TimeUnit.SECONDS)
-            .build()
-            .newWebSocket(request, listener(room, name, generation))
+        socket = httpClient.newWebSocket(request, listener(requestedRoom, requestedName, generation))
     }
 
     private fun switchRoom(intent: Intent) = switchRoom(
@@ -130,7 +158,10 @@ class PttService : Service() {
     )
 
     private fun switchRoom(room: String, name: String) {
-        if (socket == null || room.isBlank()) return
+        if (room.isBlank()) return
+        requestedRoom = room
+        requestedName = name
+        if (socket == null) return
         stopRecording()
         activeRoom = room
         channelBusy = false
@@ -144,7 +175,12 @@ class PttService : Service() {
 
     private fun listener(room: String, name: String, generation: Int) = object : WebSocketListener() {
         override fun onOpen(ws: WebSocket, response: Response) {
-            if (generation != connectionGeneration) ws.close(1000, "superseded")
+            if (generation != connectionGeneration) {
+                ws.close(1000, "superseded")
+                return
+            }
+            startHeartbeat(ws, generation)
+            status("ตรวจสอบสิทธิ์กับ Server…", false)
         }
 
         override fun onMessage(ws: WebSocket, text: String) {
@@ -162,12 +198,14 @@ class PttService : Service() {
                 }
                 "joined" -> {
                     connected = true
+                    reconnectAttempt = 0
                     activeRoom = message.optString("room", activeRoom)
                     isAdmin = message.optString("role") == "admin"
                     channelBusy = false
                     activeSpeaker = ""
                     status("พร้อมพูด", true)
                 }
+                "heartbeat" -> Unit
                 "floor-granted" -> startRecording()
                 "floor-busy" -> {
                     channelBusy = true
@@ -205,12 +243,27 @@ class PttService : Service() {
             closeFromSocket(
                 if (response?.code == 401) "Access Token ไม่ถูกต้อง" else "เชื่อมต่อไม่ได้: ${error.message}",
                 generation,
+                response?.code != 401,
             )
         }
 
         override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-            closeFromSocket("ตัดการเชื่อมต่อ", generation)
+            closeFromSocket("ตัดการเชื่อมต่อ", generation, true)
         }
+    }
+
+    private fun startHeartbeat(ws: WebSocket, generation: Int) {
+        heartbeatFuture?.cancel(false)
+        heartbeatFuture = reconnectExecutor.scheduleAtFixedRate({
+            if (generation == connectionGeneration && ws == socket && ws.send(
+                    JSONObject()
+                        .put("type", "heartbeat")
+                        .put("ts", System.currentTimeMillis())
+                        .toString(),
+                ).not()) {
+                ws.cancel()
+            }
+        }, HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_INTERVAL_SECONDS, TimeUnit.SECONDS)
     }
 
     private fun updateMembers(message: JSONObject) {
@@ -420,17 +473,29 @@ class PttService : Service() {
         else -> room
     }
 
-    private fun closeFromSocket(message: String, generation: Int) {
+    private fun closeFromSocket(message: String, generation: Int, reconnect: Boolean) {
         if (generation != connectionGeneration) return
         connectionGeneration += 1
+        heartbeatFuture?.cancel(false)
+        heartbeatFuture = null
+        socket = null
         resetConnectionState()
-        status(message)
-        stopSelf()
+        if (reconnect && shouldReconnect) {
+            scheduleReconnect(message)
+        } else {
+            shouldReconnect = false
+            status(message)
+            stopSelf()
+        }
     }
 
     private fun disconnect(message: String) {
+        shouldReconnect = false
+        cancelReconnect()
         connectionGeneration += 1
         val activeSocket = socket
+        heartbeatFuture?.cancel(false)
+        heartbeatFuture = null
         resetConnectionState()
         activeSocket?.close(1000, "user disconnected")
         status(message)
@@ -447,6 +512,23 @@ class PttService : Service() {
         activeSpeaker = ""
         roomMembers.clear()
         allMembersView = false
+    }
+
+    private fun scheduleReconnect(reason: String) {
+        if (!shouldReconnect || activeEndpoint.isBlank()) return
+        reconnectFuture?.cancel(false)
+        val delaySeconds = 1L shl reconnectAttempt.coerceIn(0, 5)
+        reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(6)
+        status("$reason กำลังเชื่อมต่อใหม่ใน ${delaySeconds} วินาที…", false)
+        reconnectFuture = reconnectExecutor.schedule({
+            reconnectFuture = null
+            openSocket()
+        }, delaySeconds, TimeUnit.SECONDS)
+    }
+
+    private fun cancelReconnect() {
+        reconnectFuture?.cancel(false)
+        reconnectFuture = null
     }
 
     private fun status(text: String, ready: Boolean = false, event: String? = null) {
@@ -474,6 +556,10 @@ class PttService : Service() {
     }
 
     override fun onDestroy() {
+        shouldReconnect = false
+        cancelReconnect()
+        heartbeatFuture?.cancel(false)
+        heartbeatFuture = null
         connectionGeneration += 1
         stopRecording()
         player?.release()
@@ -483,6 +569,9 @@ class PttService : Service() {
         audioManager.mode = AudioManager.MODE_NORMAL
         socket?.close(1000, "closed")
         socket = null
+        httpClient.dispatcher.executorService.shutdown()
+        httpClient.connectionPool.evictAll()
+        reconnectExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -525,5 +614,6 @@ class PttService : Service() {
         private const val OUTPUT_CHANNEL = AudioFormat.CHANNEL_OUT_MONO
         private const val PCM = AudioFormat.ENCODING_PCM_16BIT
         private const val FRAME_BYTES = 640
+        private const val HEARTBEAT_INTERVAL_SECONDS = 25L
     }
 }

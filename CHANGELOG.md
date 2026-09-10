@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.3-flutter — Render heartbeat and reconnect — 2026-09-10
+
+- เพิ่มข้อความ WebSocket heartbeat จาก Android ทุก 25 วินาที เพื่อให้ Render Free เห็น inbound traffic ระหว่างมีการเชื่อมต่อ
+- เพิ่ม Server heartbeat response และ WebSocket ping/pong เพื่อตรวจจับการเชื่อมต่อที่ค้าง
+- เพิ่ม Android auto-reconnect แบบ exponential backoff สูงสุด 32 วินาที และหยุดลองอัตโนมัติเมื่อ Access Token ไม่ถูกต้อง
+- เพิ่มเวอร์ชัน Flutter เป็น `1.4.3` และ Android versionCode เป็น 17
+- ตรวจ `npm test` ผ่าน รวมการทดสอบ heartbeat response
+- สร้าง Release APK ที่ลงนามแล้วสำเร็จ: `PTT-Flutter-1.4.3-release.apk` (SHA-256: `D3CBA8528CF803AC76205369E092E538E41D6F89306508B026FDB7D1601B0F31`)
+
 ## 1.4.2-flutter — Render Free — 2026-09-10
 
 - เปลี่ยน Server เริ่มต้นของ Flutter เป็น `wss://ptt-relay-ixpl.onrender.com`

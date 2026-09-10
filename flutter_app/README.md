@@ -1,12 +1,12 @@
 # PTT Flutter
 
-รุ่นทดลองข้ามแพลตฟอร์ม **1.4.1 (build 15)** ทำงานคู่กับ Kotlin `v1.2.3-docker` และเชื่อมต่อ Relay Server บน Back4App ผ่าน WSS
+รุ่นทดลองข้ามแพลตฟอร์ม **1.4.3 (build 17)** ทำงานคู่กับ Kotlin `v1.2.3-docker` และเชื่อมต่อ Relay Server บน Render ผ่าน WSS
 
 ## สถานะปัจจุบัน
 
 - Android: หน้าจอและฟังก์ชันหลักครบ, native audio/service Compile ผ่าน และสร้าง Release APK ที่ลงนามแล้วสำเร็จ
 - iOS: มี Flutter UI, Swift WebSocket/audio bridge และ Apple PushToTalk lifecycle แล้ว แต่ต้อง Compile, Sign และทดสอบบน macOS กับ iPhone จริง
-- Server: Back4App URL `wss://pttrelay-vwzw2gr4.b4a.run`, เปิด Access Token และรองรับ APNs แบบเลือกเปิดใช้
+- Server: Render URL `wss://ptt-relay-ixpl.onrender.com`, เปิด Access Token และรองรับ APNs แบบเลือกเปิดใช้
 
 ## Build Android
 
@@ -17,8 +17,8 @@ flutter build apk --debug
 flutter build apk --release
 ```
 
-- Debug: `flutter_app/build/app/outputs/versioned-apk/debug/PTT-Flutter-1.4.1-debug.apk`
-- Release ที่เซ็นแล้ว: `flutter_app/build/app/outputs/versioned-apk/release/PTT-Flutter-1.4.1-release.apk`
+- Debug: `flutter_app/build/app/outputs/versioned-apk/debug/PTT-Flutter-1.4.3-debug.apk`
+- Release ที่เซ็นแล้ว: `flutter_app/build/app/outputs/versioned-apk/release/PTT-Flutter-1.4.3-release.apk`
 - รุ่น Flutter ใช้ Application ID `com.example.ptt_flutter` จึงติดตั้งคู่กับ Kotlin เดิมได้
 
 ## เตรียม iOS บน Mac

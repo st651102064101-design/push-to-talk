@@ -12,6 +12,7 @@ const dashboardUser = String(process.env.PTT_DASHBOARD_USER || "").trim();
 const dashboardPassword = String(process.env.PTT_DASHBOARD_PASSWORD || "").trim();
 const allowRemoteDashboard = String(process.env.PTT_DASHBOARD_ALLOW_REMOTE || "").trim().toLowerCase() === "true";
 const trustProxy = String(process.env.PTT_TRUST_PROXY || "").trim().toLowerCase() === "true";
+const heartbeatIntervalMs = 30_000;
 let apns;
 try { apns = createApnsNotifier(); } catch (error) {
   console.error("APNs configuration error:", error.message);
@@ -158,6 +159,8 @@ wss.on("connection", (peer, request) => {
   peer.role = roleFromRequest(request);
   peer.connectedAt = Date.now();
   peer.talkCount = 0;
+  peer.isAlive = true;
+  peer.on("pong", () => { peer.isAlive = true; });
   peer.send(JSON.stringify({ type: "authenticated", role: peer.role }));
   peer.on("message", (data, binary) => {
     if (binary) {
@@ -169,7 +172,11 @@ wss.on("connection", (peer, request) => {
       return;
     }
     let msg; try { msg = JSON.parse(data.toString()); } catch { peer.send(JSON.stringify({ type: "error", message: "invalid message" })); return; }
-    if (msg.type === "join") {
+    if (msg.type === "heartbeat") {
+      if (peer.readyState === WebSocket.OPEN) {
+        peer.send(JSON.stringify({ type: "heartbeat", ts: Number.isFinite(msg.ts) ? msg.ts : Date.now() }));
+      }
+    } else if (msg.type === "join") {
       const id = String(msg.room || "").trim().slice(0, 40);
       if (!allowedRooms.has(id)) { peer.send(JSON.stringify({ type: "error", code: "invalid_room", message: "ไม่พบห้องที่ระบุ" })); return; }
       if (id === "all" && peer.role !== "admin") { peer.send(JSON.stringify({ type: "error", code: "forbidden_all", message: "Token นี้ไม่มีสิทธิ์ใช้งาน All" })); return; }
@@ -203,6 +210,17 @@ wss.on("connection", (peer, request) => {
   });
   peer.on("close", () => leave(peer));
 });
+const heartbeatTimer = setInterval(() => {
+  for (const peer of wss.clients) {
+    if (peer.isAlive === false) {
+      peer.terminate();
+      continue;
+    }
+    peer.isAlive = false;
+    peer.ping();
+  }
+}, heartbeatIntervalMs);
+heartbeatTimer.unref?.();
 setInterval(() => { for (const room of rooms.values()) if (room.floor?.expires < Date.now()) release(room, room.floor); }, 1000);
 server.listen(port, () => {
   console.log("PTT relay and dashboard listening on port " + port);
@@ -213,6 +231,6 @@ server.listen(port, () => {
   if (allowRemoteDashboard) console.warn("Dashboard remote access is enabled; protect port 8181 and keep Dashboard credentials private.");
   if (trustProxy) console.log("Trusted reverse proxy client IP headers: enabled");
 });
-const shutdown = () => { apns.close(); server.close(() => process.exit(0)); };
+const shutdown = () => { clearInterval(heartbeatTimer); apns.close(); server.close(() => process.exit(0)); };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
