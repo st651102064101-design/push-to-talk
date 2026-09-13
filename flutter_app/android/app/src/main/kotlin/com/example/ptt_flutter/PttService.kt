@@ -256,9 +256,13 @@ class PttService : Service() {
 
         override fun onClosed(ws: WebSocket, code: Int, reason: String) {
             closeFromSocket(
-                if (code == SOCKET_REPLACED_CODE) "มีการเชื่อมต่อใหม่จากแอปนี้แล้ว" else "ตัดการเชื่อมต่อ",
+                when (code) {
+                    SOCKET_REPLACED_CODE -> "มีการเชื่อมต่อใหม่จากแอปนี้แล้ว"
+                    SOCKET_DASHBOARD_NO_RECONNECT_CODE -> "ถูกตัดการเชื่อมต่อโดยผู้ดูแลระบบ"
+                    else -> "ตัดการเชื่อมต่อ"
+                },
                 generation,
-                code != SOCKET_REPLACED_CODE,
+                code != SOCKET_REPLACED_CODE && code != SOCKET_DASHBOARD_NO_RECONNECT_CODE,
             )
         }
     }
@@ -635,5 +639,6 @@ class PttService : Service() {
         private const val FRAME_BYTES = 640
         private const val HEARTBEAT_INTERVAL_SECONDS = 25L
         private const val SOCKET_REPLACED_CODE = 4001
+        private const val SOCKET_DASHBOARD_NO_RECONNECT_CODE = 4002
     }
 }

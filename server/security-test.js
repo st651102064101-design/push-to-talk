@@ -61,7 +61,9 @@ try {
   assert.equal(authenticatedDashboard.status, 200);
   const dashboardPage = await fetch(`http://127.0.0.1:${port}/`, { headers: { Authorization: `Basic ${basic}` } });
   assert.equal(dashboardPage.status, 200);
-  assert.match(await dashboardPage.text(), /จัดการอุปกรณ์/);
+  const dashboardHtml = await dashboardPage.text();
+  assert.match(dashboardHtml, /จัดการอุปกรณ์/);
+  assert.match(dashboardHtml, /ตัดการเชื่อมต่อ \(ไม่เชื่อมต่อใหม่\)/);
   const initialStatus = await authenticatedDashboard.clone().json();
   assert.equal(initialStatus.config.maxConnections, 100);
   assert.equal(initialStatus.config.maxConnectionsPerIp, 5);
@@ -131,17 +133,40 @@ try {
   const statusBeforeDisconnect = await fetch(`http://127.0.0.1:${port}/status`, { headers: { Authorization: `Basic ${basic}` } }).then(response => response.json());
   const userPeer = statusBeforeDisconnect.rooms.find(room => room.id === "room-1")?.peers.find(peer => peer.name === "User");
   assert.ok(userPeer?.id);
-  const userDisconnected = new Promise(resolve => userReconnected.ws.once("close", (_code, reason) => resolve(String(reason))));
+  const userDisconnected = new Promise(resolve => userReconnected.ws.once("close", (code, reason) => resolve({ code, reason: String(reason) })));
   const disconnectResponse = await fetch(`http://127.0.0.1:${port}/admin/disconnect`, {
     method: "POST",
     headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json", "X-PTT-Dashboard": "1" },
     body: JSON.stringify({ peerId: userPeer.id })
   });
   assert.equal(disconnectResponse.status, 200);
-  assert.match(await userDisconnected, /dashboard/);
+  const temporaryDisconnect = await userDisconnected;
+  assert.equal(temporaryDisconnect.code, 4003);
+  assert.match(temporaryDisconnect.reason, /temporarily/);
   const statusAfterDisconnect = await disconnectResponse.clone().json();
   assert.equal(statusAfterDisconnect.status.rooms.find(room => room.id === "room-1")?.peers.length, 0);
-  assert.equal(statusAfterDisconnect.status.config.audit[0].action, "ตัดการเชื่อมต่อ");
+  assert.equal(statusAfterDisconnect.status.config.audit[0].action, "ตัดการเชื่อมต่อชั่วคราว");
+
+  const noReconnectUser = connect(userToken);
+  assert.equal((await noReconnectUser.next("authenticated")).role, "user");
+  noReconnectUser.ws.send(JSON.stringify({ type: "join", room: "room-1", name: "No reconnect", clientId: "android-no-reconnect-test" }));
+  assert.equal((await noReconnectUser.next("joined")).room, "room-1");
+  const noReconnectStatus = await fetch(`http://127.0.0.1:${port}/status`, { headers: { Authorization: `Basic ${basic}` } }).then(response => response.json());
+  const noReconnectPeer = noReconnectStatus.rooms.find(room => room.id === "room-1")?.peers.find(peer => peer.name === "No reconnect");
+  assert.ok(noReconnectPeer?.id);
+  const noReconnectClosed = new Promise(resolve => noReconnectUser.ws.once("close", (code, reason) => resolve({ code, reason: String(reason) })));
+  const noReconnectResponse = await fetch(`http://127.0.0.1:${port}/admin/disconnect-no-reconnect`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basic}`, "Content-Type": "application/json", "X-PTT-Dashboard": "1" },
+    body: JSON.stringify({ peerId: noReconnectPeer.id })
+  });
+  assert.equal(noReconnectResponse.status, 200);
+  const permanentDisconnect = await noReconnectClosed;
+  assert.equal(permanentDisconnect.code, 4002);
+  assert.match(permanentDisconnect.reason, /without reconnect/);
+  const statusAfterNoReconnect = await noReconnectResponse.clone().json();
+  assert.equal(statusAfterNoReconnect.status.rooms.find(room => room.id === "room-1")?.peers.length, 0);
+  assert.equal(statusAfterNoReconnect.status.config.audit[0].action, "ตัดการเชื่อมต่อ (ไม่เชื่อมต่อใหม่)");
 
   const proxied = new WebSocket(`ws://127.0.0.1:${port}`, {
     headers: { Authorization: `Bearer ${userToken}`, "X-Forwarded-For": "203.0.113.9" }
