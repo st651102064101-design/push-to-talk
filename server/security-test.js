@@ -63,7 +63,7 @@ try {
   assert.equal(dashboardPage.status, 200);
   const dashboardHtml = await dashboardPage.text();
   assert.match(dashboardHtml, /จัดการอุปกรณ์/);
-  assert.match(dashboardHtml, /ตัดการเชื่อมต่อ \(ไม่เชื่อมต่อใหม่\)/);
+  assert.match(dashboardHtml, /ตัดการเชื่อมต่อ \(None reconnect\)/);
   const initialStatus = await authenticatedDashboard.clone().json();
   assert.equal(initialStatus.config.maxConnections, 100);
   assert.equal(initialStatus.config.maxConnectionsPerIp, 5);
@@ -166,7 +166,7 @@ try {
   assert.match(permanentDisconnect.reason, /without reconnect/);
   const statusAfterNoReconnect = await noReconnectResponse.clone().json();
   assert.equal(statusAfterNoReconnect.status.rooms.find(room => room.id === "room-1")?.peers.length, 0);
-  assert.equal(statusAfterNoReconnect.status.config.audit[0].action, "ตัดการเชื่อมต่อ (ไม่เชื่อมต่อใหม่)");
+  assert.equal(statusAfterNoReconnect.status.config.audit[0].action, "ตัดการเชื่อมต่อ (None reconnect)");
 
   const proxied = new WebSocket(`ws://127.0.0.1:${port}`, {
     headers: { Authorization: `Bearer ${userToken}`, "X-Forwarded-For": "203.0.113.9" }
