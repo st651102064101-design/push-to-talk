@@ -1,9 +1,11 @@
 package com.example.ptt_flutter
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
@@ -15,6 +17,7 @@ import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -76,24 +79,32 @@ class PttService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_CONNECT -> connect(intent)
-            ACTION_SWITCH_ROOM -> switchRoom(intent)
-            ACTION_REQUEST_STATE -> {
-                status(if (connected) "เชื่อมต่ออยู่" else "ยังไม่เชื่อมต่อ", connected)
-                if (socket == null && !shouldReconnect) stopSelf()
+        try {
+            when (intent?.action) {
+                ACTION_CONNECT -> connect(intent)
+                ACTION_SWITCH_ROOM -> switchRoom(intent)
+                ACTION_REQUEST_STATE -> {
+                    status(if (connected) "เชื่อมต่ออยู่" else "ยังไม่เชื่อมต่อ", connected)
+                    if (socket == null && !shouldReconnect) stopSelf()
+                }
+                ACTION_TEST_SPEAKER -> testSpeaker()
+                ACTION_REQUEST_TALK -> socket?.send("{\"type\":\"request-talk\"}")
+                ACTION_RELEASE_TALK -> {
+                    stopRecording()
+                    channelBusy = false
+                    activeSpeaker = ""
+                    socket?.send("{\"type\":\"release-talk\"}")
+                    status("พร้อมพูด", connected)
+                }
+                ACTION_CYCLE_OUTPUT -> cycleOutput()
+                ACTION_DISCONNECT -> disconnect("ตัดการเชื่อมต่อ")
             }
-            ACTION_TEST_SPEAKER -> testSpeaker()
-            ACTION_REQUEST_TALK -> socket?.send("{\"type\":\"request-talk\"}")
-            ACTION_RELEASE_TALK -> {
-                stopRecording()
-                channelBusy = false
-                activeSpeaker = ""
-                socket?.send("{\"type\":\"release-talk\"}")
-                status("พร้อมพูด", connected)
-            }
-            ACTION_CYCLE_OUTPUT -> cycleOutput()
-            ACTION_DISCONNECT -> disconnect("ตัดการเชื่อมต่อ")
+        } catch (error: Exception) {
+            Log.e(TAG, "PTT service action failed: ${intent?.action}", error)
+            shouldReconnect = false
+            cancelReconnect()
+            status("เริ่มการเชื่อมต่อไม่ได้: ${error.message ?: "ข้อผิดพลาดของ Android"}")
+            stopSelf(startId)
         }
         return START_NOT_STICKY
     }
@@ -104,17 +115,30 @@ class PttService : Service() {
         val name = intent.getStringExtra(EXTRA_NAME).orEmpty().ifBlank { "Android" }
         val authToken = intent.getStringExtra(EXTRA_AUTH_TOKEN).orEmpty().trim()
 
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            status("ต้องอนุญาตไมโครโฟนก่อนเชื่อมต่อ")
+            stopSelf()
+            return
+        }
+
         createChannel()
-        startForeground(
-            NOTIFICATION_ID,
-            NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentTitle("PTT พร้อมใช้งาน")
-                .setContentText("กำลังเชื่อมต่อห้องเสียง")
-                .setOngoing(true)
-                .build(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-        )
+        try {
+            startForeground(
+                NOTIFICATION_ID,
+                NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                    .setContentTitle("PTT พร้อมใช้งาน")
+                    .setContentText("กำลังเชื่อมต่อห้องเสียง")
+                    .setOngoing(true)
+                    .build(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to start microphone foreground service", error)
+            status("เริ่มโหมดทำงานเบื้องหลังไม่ได้: ${error.message ?: "ตรวจสอบสิทธิ์ไมโครโฟน"}")
+            stopSelf()
+            return
+        }
 
         if (!endpoint.startsWith("ws://") && !endpoint.startsWith("wss://")) {
             shouldReconnect = false
@@ -594,6 +618,7 @@ class PttService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private const val TAG = "PttService"
         const val ACTION_CONNECT = "ptt.flutter.CONNECT"
         const val ACTION_SWITCH_ROOM = "ptt.flutter.SWITCH_ROOM"
         const val ACTION_REQUEST_STATE = "ptt.flutter.REQUEST_STATE"
